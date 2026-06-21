@@ -255,7 +255,7 @@ export function ProductConverter({ sizeMap }: { sizeMap: SizeMap }) {
                     <tr key={ri} className={isProductStart ? "border-t-2 border-slate-200" : ""}>
                       <td className={`px-2 py-1 border-b border-slate-50 text-right tabular-nums text-slate-300 select-none sticky left-0 z-10 ${rowBg}`}>{ri + 1}</td>
                       {r.map((c, ci) => (
-                        <td key={ci} className={`px-2 py-1 border-b border-slate-50 ${ci === 3 ? "font-mono text-slate-500" : ci === 4 ? "font-mono tabular-nums text-slate-700" : ci === 0 ? "font-medium text-slate-700" : "text-slate-600"} ${c === "" ? "text-slate-300" : ""}`}>
+                        <td key={ci} className={`px-2 py-1 border-b border-slate-50 ${ci === 3 ? "font-mono text-slate-500" : ci === 4 || ci === 5 ? "font-mono tabular-nums text-slate-700" : ci === 0 ? "font-medium text-slate-700" : "text-slate-600"} ${c === "" ? "text-slate-300" : ""}`}>
                           {String(c) || "·"}
                         </td>
                       ))}

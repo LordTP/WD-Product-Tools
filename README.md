@@ -23,8 +23,8 @@ hammering ShipHero's credit-metered API.
 ### Purchase Orders → ShipHero (`/purchase-orders`)
 Upload a PO sheet (.xlsx/.csv) → columns **auto-map** (fuzzy, handles extra/renamed
 columns) → supplier **aliases resolve** to exact ShipHero vendor names → **status
-matching** against your ShipHero statuses → editable preview grid (sell-ahead toggle,
-per-PO status) → **Download ShipHero CSV** *or* **Push to ShipHero** (confirm modal
+matching** against your ShipHero statuses → editable preview grid (per-PO status,
+inline qty/price edits) → **Download ShipHero CSV** *or* **Push to ShipHero** (confirm modal
 with read-only pre-flight: warehouse auto-detect, duplicate-PO check, vendor/status
 check, **SKU-existence** check).
 
@@ -47,8 +47,10 @@ A separate **file-in → file-out** tool (does NOT touch Shopify directly): uplo
 required fields flagged) → size ranges expand to one row per variant → builds the
 **Hextom** multi-variant CSV (Title + metafields on the first row of each product,
 blank on the size rows beneath — that's how Hextom groups variants). Cost logic:
-Summa → Converted £, others → $. **Scenario A** (factory_cost_price) / **B**
-(+ landed_cost_price) toggle, editable **season suffix** (`_NEW`). Preview shows
+Summa → Converted £, others → $ — written to **both** the native **Cost per item**
+column (variant-level, every size row) **and** the `factory_cost_price` metafield.
+**Scenario A** (factory_cost_price) / **B** (+ landed_cost_price) toggle, editable
+**season suffix** (`_NEW`). Preview shows
 product/variant counts, a **column-fill %** panel, and warnings (dup codes /
 unrecognised size ranges). Download A, B, or both. The pure converter
 (`src/lib/styleArcade/convert.ts`) is a faithful port of `convert_style_arcade.py`.
@@ -69,7 +71,7 @@ hardcoded map (tests), and the app passes the DB map in.
 ```bash
 npm install
 npm run dev          # http://localhost:3000
-npm test             # vitest — 33 tests incl. golden + end-to-end vs real files
+npm test             # vitest — 43 tests incl. golden + end-to-end vs real files
 npm run build        # production build (server + client compiled together)
 ```
 
@@ -85,7 +87,7 @@ SHIPHERO_ACCESS_TOKEN=         # optional; use it immediately until it expires (
 ```
 Then **Sync** on PO History / Dashboard, or **Sync from ShipHero** on Vendors.
 
-## Tests = proof against real data (42 tests)
+## Tests = proof against real data (43 tests)
 - `shiphero/convert.test.ts` — PO spec acceptance (12 POs / 68 lines / 2,400 units).
 - `shiphero/golden.test.ts` — reproduces a **real successful ShipHero upload** byte-for-byte.
 - `shiphero/e2e.test.ts` — real raw merch input → full parse→map→convert → that real upload.

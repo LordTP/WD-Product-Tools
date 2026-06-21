@@ -88,7 +88,7 @@ export function resolveColumns(headers: string[]): { cols: ColumnMap; missing: s
 
 // ---- column headers of the OUTPUT (exact, incl. [type] suffix — spec §4.1) ----
 const HEADER_BASE = [
-  "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Variant Price",
+  "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Variant Price", "Cost per item",
   "Metafield: custom.collection [single_line_text_field]",
   "Metafield: custom.original_collection [single_line_text_field]",
   "Metafield: custom.season_code [single_line_text_field]",
@@ -135,10 +135,16 @@ export function blockSku(code: string): string {
   const parts = sv(code).split("-");
   return parts.length >= 2 ? parts.slice(0, 2).join("-") : sv(code);
 }
-function costFor(row: unknown[], cols: ColumnMap, scenario: Scenario): string[] {
+/** Factory cost per unit: Converted £ for Summa (FOB/GBP-priced), else the $
+ *  value. This single value feeds BOTH the native "Cost per item" column and the
+ *  custom.factory_cost_price metafield. */
+function factoryCost(row: unknown[], cols: ColumnMap): string {
   const supplier = sv(row[cols.supplier]).toUpperCase();
-  const fcp = supplier === SUMMA ? row[cols.fcp_gbp_conv] : row[cols.fcp_usd];
-  return scenario === "A" ? [num(fcp)] : [num(fcp), num(row[cols.landed_gbp])];
+  return num(supplier === SUMMA ? row[cols.fcp_gbp_conv] : row[cols.fcp_usd]);
+}
+function costFor(row: unknown[], cols: ColumnMap, scenario: Scenario): string[] {
+  const fcp = factoryCost(row, cols);
+  return scenario === "A" ? [fcp] : [fcp, num(row[cols.landed_gbp])];
 }
 
 const at = (row: unknown[], idx: number): unknown => (idx >= 0 ? row[idx] : "");
@@ -184,10 +190,11 @@ export function buildScenario(
     ];
     const blanks = meta.map(() => "");
     const rrp = num(at(row, cols.rrp));
+    const cost = factoryCost(row, cols); // native Cost per item — variant-level, on every size row
     sizeList.forEach((size, i) => {
       const scode = sizeMap.codes[size] ?? "";
       const sku = scode ? `${code}-${scode}` : code;
-      out.push([i === 0 ? title : "", "Size", size, sku, rrp, ...(i === 0 ? meta : blanks)]);
+      out.push([i === 0 ? title : "", "Size", size, sku, rrp, cost, ...(i === 0 ? meta : blanks)]);
     });
   }
   return out;

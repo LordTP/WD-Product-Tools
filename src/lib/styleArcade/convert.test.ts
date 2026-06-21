@@ -59,12 +59,21 @@ describe("Style Arcade converter (spec §8 behaviours)", () => {
     expect(A[1][idx("A", BLOCK)]).toBe("WD-000682");
   });
 
-  it("blanks ALL metafields on non-first variant rows", () => {
+  it("blanks ALL metafields on non-first variant rows, but keeps variant-level Price + Cost", () => {
     const row = A[2]; // 2nd size of Summa
-    // everything except base cols [Title, Option1 Name, Option1 Value, SKU, Price] is blank
-    expect(row.slice(5).every((c) => c === "")).toBe(true);
     expect(row[1]).toBe("Size");
     expect(row[2]).toBe("XS");
+    expect(row[4]).toBe("50");   // Variant Price repeats on every variant row
+    expect(row[5]).toBe("6.45"); // Cost per item repeats on every variant row
+    // everything after the 6 base cols [Title, Opt1 Name, Opt1 Value, SKU, Price, Cost] is blank
+    expect(row.slice(6).every((c) => c === "")).toBe(true);
+  });
+
+  it("adds native Cost per item (variant-level) = factory cost, on every size row", () => {
+    const c = idx("A", "Cost per item");
+    expect(c).toBe(5); // immediately after Variant Price
+    expect(A.slice(1, 7).every((r) => r[c] === "6.45")).toBe(true);  // Summa, all 6 sizes
+    expect(A.slice(7, 13).every((r) => r[c] === "10.8")).toBe(true); // Sandra, all 6 sizes
   });
 
   it("Scenario B adds landed_cost_price (8.34 for Summa) after factory_cost_price", () => {
