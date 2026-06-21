@@ -1,0 +1,1 @@
+ALTER TABLE `shiphero_po_cache` ADD `global_id` text;

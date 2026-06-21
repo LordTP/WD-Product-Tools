@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - po-data:/data # SQLite persists across redeploys
+    environment:
+      - DATABASE_PATH=/data/data.db
+      # Phase 2+ (ShipHero API) — fill these when wiring direct integration:
+      # - SHIPHERO_REFRESH_TOKEN=
+      # - SHIPHERO_WAREHOUSE_ID=
+    restart: unless-stopped
+
+volumes:
+  po-data:

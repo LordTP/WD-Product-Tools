@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ShipHero access-token cache (never commit)
+.shiphero_token.json
+
+# local SQLite database — runtime state, not source (rebuilds on boot)
+*.db
+*.db-shm
+*.db-wal
+
+!.env.example

@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1781944838088,
+      "tag": "0000_salty_stingray",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781949825640,
+      "tag": "0001_lush_jimmy_woo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781951962910,
+      "tag": "0002_hot_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781975958498,
+      "tag": "0003_eager_cardiac",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1781979339065,
+      "tag": "0004_organic_madame_web",
+      "breakpoints": true
+    }
+  ]
+}
