@@ -13,12 +13,12 @@ function mkRow(vals: Record<string, unknown>): unknown[] {
 
 const SUMMA = mkRow({
   product_code: "WD-000682-025", title: "ALEX TOP | CHOCOLATE", size_range: "XXS-XL",
-  supplier: "SUMMA", season: "AW26", collection: "Drop 1", rrp: 50,
+  supplier: "SUMMA", season: "AW26", collection: "Drop 1", rrp: 50, cost_gbp: 8.34,
   fcp_usd: 0, fcp_gbp_conv: 6.45, landed_gbp: 8.34, fabric_type: "Jersey",
 });
 const SANDRA = mkRow({
   product_code: "WD-000600-001", title: "BELLA TOP | WHITE", size_range: "XXS-XL",
-  supplier: "SANDRA", season: "AW26", collection: "Drop 1", rrp: 40,
+  supplier: "SANDRA", season: "AW26", collection: "Drop 1", rrp: 40, cost_gbp: 6,
   fcp_usd: 10.8, fcp_gbp_conv: 0, landed_gbp: 5,
 });
 
@@ -47,7 +47,7 @@ describe("Style Arcade converter (spec §8 behaviours)", () => {
     ]);
   });
 
-  it("Summa cost uses Converted £ (6.45); non-Summa uses $ (10.8)", () => {
+  it("factory_cost_price metafield: Summa uses Converted £ (6.45), non-Summa uses $ (10.8)", () => {
     const c = idx("A", FCP);
     expect(A[1][c]).toBe("6.45"); // Summa first row
     expect(A[7][c]).toBe("10.8"); // Sandra first row
@@ -63,17 +63,19 @@ describe("Style Arcade converter (spec §8 behaviours)", () => {
     const row = A[2]; // 2nd size of Summa
     expect(row[1]).toBe("Size");
     expect(row[2]).toBe("XS");
-    expect(row[4]).toBe("50");   // Variant Price repeats on every variant row
-    expect(row[5]).toBe("6.45"); // Cost per item repeats on every variant row
+    expect(row[4]).toBe("50");   // Variant Price (RRP) repeats on every variant row
+    expect(row[5]).toBe("8.34"); // Cost per item (Cost price GBP) repeats on every variant row
     // everything after the 6 base cols [Title, Opt1 Name, Opt1 Value, SKU, Price, Cost] is blank
     expect(row.slice(6).every((c) => c === "")).toBe(true);
   });
 
-  it("adds native Cost per item (variant-level) = factory cost, on every size row", () => {
+  it("native Cost per item (variant-level) = Cost price (GBP), distinct from factory cost", () => {
     const c = idx("A", "Cost per item");
     expect(c).toBe(5); // immediately after Variant Price
-    expect(A.slice(1, 7).every((r) => r[c] === "6.45")).toBe(true);  // Summa, all 6 sizes
-    expect(A.slice(7, 13).every((r) => r[c] === "10.8")).toBe(true); // Sandra, all 6 sizes
+    expect(A.slice(1, 7).every((r) => r[c] === "8.34")).toBe(true); // Summa cost_gbp, all 6 sizes
+    expect(A.slice(7, 13).every((r) => r[c] === "6")).toBe(true);   // Sandra cost_gbp, all 6 sizes
+    // and it is NOT the factory_cost_price metafield value (6.45 for Summa)
+    expect(A[1][c]).not.toBe(A[1][idx("A", FCP)]);
   });
 
   it("Scenario B adds landed_cost_price (8.34 for Summa) after factory_cost_price", () => {

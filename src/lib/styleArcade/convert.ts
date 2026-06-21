@@ -22,13 +22,17 @@ export interface FieldDef {
 export const FIELDS: FieldDef[] = [
   { key: "product_code", names: ["product code"], index: 1, required: true },
   { key: "title", names: ["product title", "title", "product/title", "product name"], index: 3, required: true },
-  { key: "rrp", names: ["rrp"], index: 18, required: true },
+  // RRP (GBP) → Variant Price. Be explicit so it beats "Spend @ RRP ex tax (GBP)".
+  { key: "rrp", names: ["rrp (gbp)", "rrp £", "rrp"], index: 18, required: true },
+  // Cost price (GBP) → native "Cost per item" (variant-level). NOT the factory cost.
+  { key: "cost_gbp", names: ["cost price (gbp)", "cost price £", "cost (gbp)"], index: 19, required: true },
   { key: "fcp_usd", names: ["factory cost price ($)", "factory cost price $", "factory cost price usd"], index: 21 },
-  { key: "supplier", names: ["supplier"], index: 31, required: true },
+  // Explicit "… name"/"product …" so we don't grab "Supplier Code" / "Fabric Category".
+  { key: "supplier", names: ["supplier name", "supplier"], index: 31, required: true },
   { key: "country", names: ["country of origin", "country"], index: 32 },
   { key: "size_range", names: ["size range"], index: 35, required: true },
-  { key: "category", names: ["category"], index: 36 },
-  { key: "subcategory", names: ["subcategory"], index: 37 },
+  { key: "category", names: ["product category", "category"], index: 36 },
+  { key: "subcategory", names: ["product subcategory", "subcategory"], index: 37 },
   { key: "season", names: ["season"], index: 38 },
   { key: "collection", names: ["collection"], index: 39 },
   { key: "colour_family", names: ["colour family", "color family"], index: 40 },
@@ -136,8 +140,8 @@ export function blockSku(code: string): string {
   return parts.length >= 2 ? parts.slice(0, 2).join("-") : sv(code);
 }
 /** Factory cost per unit: Converted £ for Summa (FOB/GBP-priced), else the $
- *  value. This single value feeds BOTH the native "Cost per item" column and the
- *  custom.factory_cost_price metafield. */
+ *  value. Feeds the custom.factory_cost_price metafield (NOT the variant "Cost
+ *  per item" — that's the separate Cost price (GBP) column). */
 function factoryCost(row: unknown[], cols: ColumnMap): string {
   const supplier = sv(row[cols.supplier]).toUpperCase();
   return num(supplier === SUMMA ? row[cols.fcp_gbp_conv] : row[cols.fcp_usd]);
@@ -189,8 +193,8 @@ export function buildScenario(
       sv(at(row, cols.fabric_composition)),
     ];
     const blanks = meta.map(() => "");
-    const rrp = num(at(row, cols.rrp));
-    const cost = factoryCost(row, cols); // native Cost per item — variant-level, on every size row
+    const rrp = num(at(row, cols.rrp)); // RRP (GBP) → Variant Price
+    const cost = num(at(row, cols.cost_gbp)); // Cost price (GBP) → native Cost per item (every size row)
     sizeList.forEach((size, i) => {
       const scode = sizeMap.codes[size] ?? "";
       const sku = scode ? `${code}-${scode}` : code;
@@ -231,7 +235,7 @@ export function analyze(
       unmapped.add(range);
     }
   }
-  const popKeys = ["fabric_category", "fabric_type", "fabric_composition", "colour_name", "supplier", "season", "rrp"];
+  const popKeys = ["fabric_category", "fabric_type", "fabric_composition", "colour_name", "supplier", "season", "rrp", "cost_gbp"];
   const populated = popKeys.map((key) => {
     const idx = cols[key];
     const filled = products.filter((r) => sv(at(r, idx)) !== "").length;

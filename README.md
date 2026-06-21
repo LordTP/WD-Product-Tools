@@ -46,10 +46,13 @@ A separate **file-in → file-out** tool (does NOT touch Shopify directly): uplo
 **Style Arcade** `.xlsx` export → columns auto-map (with a **Columns** remap panel,
 required fields flagged) → size ranges expand to one row per variant → builds the
 **Hextom** multi-variant CSV (Title + metafields on the first row of each product,
-blank on the size rows beneath — that's how Hextom groups variants). Cost logic:
-Summa → Converted £, others → $ — written to **both** the native **Cost per item**
-column (variant-level, every size row) **and** the `factory_cost_price` metafield.
-**Scenario A** (factory_cost_price) / **B** (+ landed_cost_price) toggle, editable
+blank on the size rows beneath — that's how Hextom groups variants). Each row =
+one colourway → one product (colour in the Title + `custom.colour`); Size is the
+variant axis. **Three distinct money columns**, don't confuse them:
+**Variant Price** ← *RRP (GBP)*; native **Cost per item** ← *Cost price (GBP)*
+(variant-level, every size row); **`factory_cost_price`** metafield ← factory cost
+(Summa → Converted £, others → $). **Scenario A** (factory_cost_price) / **B**
+(+ landed_cost_price ← *Landed Cost Price Calc (£)*) toggle, editable
 **season suffix** (`_NEW`). Preview shows
 product/variant counts, a **column-fill %** panel, and warnings (dup codes /
 unrecognised size ranges). Download A, B, or both. The pure converter
