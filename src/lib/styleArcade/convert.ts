@@ -92,7 +92,8 @@ export function resolveColumns(headers: string[]): { cols: ColumnMap; missing: s
 
 // ---- column headers of the OUTPUT (exact, incl. [type] suffix — spec §4.1) ----
 const HEADER_BASE = [
-  "Title", "Option1 Name", "Option1 Value", "Variant SKU", "Variant Price", "Cost per item",
+  "Title", "Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value",
+  "Variant SKU", "Variant Price", "Cost per item",
   "Metafield: custom.collection [single_line_text_field]",
   "Metafield: custom.original_collection [single_line_text_field]",
   "Metafield: custom.season_code [single_line_text_field]",
@@ -195,10 +196,12 @@ export function buildScenario(
     const blanks = meta.map(() => "");
     const rrp = num(at(row, cols.rrp)); // RRP (GBP) → Variant Price
     const cost = num(at(row, cols.cost_gbp)); // Cost price (GBP) → native Cost per item (every size row)
+    const colour = sv(at(row, cols.colour_name)); // Option1 = Colour — same across this product's sizes
     sizeList.forEach((size, i) => {
       const scode = sizeMap.codes[size] ?? "";
       const sku = scode ? `${code}-${scode}` : code;
-      out.push([i === 0 ? title : "", "Size", size, sku, rrp, cost, ...(i === 0 ? meta : blanks)]);
+      // Option1 = Colour, Option2 = Size (both repeat on every variant row; Title only on the first).
+      out.push([i === 0 ? title : "", "Colour", colour, "Size", size, sku, rrp, cost, ...(i === 0 ? meta : blanks)]);
     });
   }
   return out;

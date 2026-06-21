@@ -47,8 +47,10 @@ A separate **file-in → file-out** tool (does NOT touch Shopify directly): uplo
 required fields flagged) → size ranges expand to one row per variant → builds the
 **Hextom** multi-variant CSV (Title + metafields on the first row of each product,
 blank on the size rows beneath — that's how Hextom groups variants). Each row =
-one colourway → one product (colour in the Title + `custom.colour`); Size is the
-variant axis. **Three distinct money columns**, don't confuse them:
+one colourway → one product, with **two variant options: Option1 = Colour**
+(from Colour Name, repeated across the product's sizes) **and Option2 = Size**
+(colour also kept in the Title + `custom.colour` metafield). **Three distinct
+money columns**, don't confuse them:
 **Variant Price** ← *RRP (GBP)*; native **Cost per item** ← *Cost price (GBP)*
 (variant-level, every size row); **`factory_cost_price`** metafield ← factory cost
 (Summa → Converted £, others → $). **Scenario A** (factory_cost_price) / **B**
