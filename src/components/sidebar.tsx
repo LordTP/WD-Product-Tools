@@ -28,6 +28,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  // No shell on the login page.
+  if (pathname === "/login") return null;
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <aside className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col">
       <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-200">
@@ -78,10 +86,19 @@ export function Sidebar() {
         <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
           WD
         </div>
-        <div className="text-xs leading-tight">
+        <div className="text-xs leading-tight min-w-0">
           <p className="text-slate-700 font-medium">Product team</p>
           <p className="text-slate-400">Wander Doll</p>
         </div>
+        <button
+          onClick={logout}
+          title="Sign out"
+          className="ml-auto text-slate-400 hover:text-slate-700 p-1.5 rounded hover:bg-slate-100"
+        >
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+        </button>
       </div>
     </aside>
   );

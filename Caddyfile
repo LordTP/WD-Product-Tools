@@ -1,0 +1,7 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# Point the domain's DNS A record at the droplet IP first; Caddy provisions
+# and renews the certificate on its own.
+
+wanderdoll.truepathgroup.co.uk {
+	reverse_proxy app:3000
+}

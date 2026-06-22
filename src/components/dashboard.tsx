@@ -6,6 +6,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { PoSummary } from "@/lib/shiphero/po-pull";
+import type { SizeMap } from "@/lib/sizes";
+import { PoBreakdownModal } from "./po-breakdown-modal";
 
 const DONE = ["closed", "canceled", "cancelled"]; // statuses that aren't "open"
 const isOpen = (p: PoSummary) => !DONE.includes(p.status.trim().toLowerCase());
@@ -16,11 +18,12 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysBetween = (a: string, b: string) =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
 
-export function Dashboard({ shipheroConnected }: { shipheroConnected: boolean }) {
+export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: boolean; sizeMap: SizeMap }) {
   const [pos, setPos] = useState<PoSummary[] | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<PoSummary | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,10 +76,22 @@ export function Dashboard({ shipheroConnected }: { shipheroConnected: boolean })
   const openReceived = open.reduce((a, p) => a + p.unitsReceived, 0);
   const outstanding = Math.max(openOrdered - openReceived, 0);
   const receivingPct = openOrdered ? Math.round((openReceived / openOrdered) * 100) : 0;
-  const inProgress = open
-    .filter((p) => p.unitsReceived > 0 && p.unitsReceived < p.unitsOrdered)
-    .map((p) => ({ ...p, pct: Math.round((p.unitsReceived / p.unitsOrdered) * 100) }))
-    .sort((a, b) => b.pct - a.pct);
+  // Every open PO with line data — in transit, awaiting, or fully booked in.
+  const receiving = open
+    .filter((p) => p.unitsOrdered > 0)
+    .map((p) => {
+      const pct = Math.round((p.unitsReceived / p.unitsOrdered) * 100);
+      const state = p.unitsReceived === 0 ? "awaiting" : p.unitsReceived >= p.unitsOrdered ? "complete" : "part";
+      return { ...p, pct, state };
+    })
+    // in-progress first, then awaiting, then fully booked in; most-received first within each.
+    .sort((a, b) => {
+      const rank = (s: string) => (s === "part" ? 0 : s === "awaiting" ? 1 : 2);
+      return rank(a.state) - rank(b.state) || b.pct - a.pct;
+    });
+  const awaitingCount = receiving.filter((p) => p.state === "awaiting").length;
+  const partCount = receiving.filter((p) => p.state === "part").length;
+  const completeCount = receiving.filter((p) => p.state === "complete").length;
 
   // Upcoming deliveries: open POs whose expected date is today or later.
   const upcoming = open
@@ -149,12 +164,12 @@ export function Dashboard({ shipheroConnected }: { shipheroConnected: boolean })
             </div>
 
             {/* Receiving progress */}
-            <Panel title="Receiving (open POs)">
+            <Panel title="Receiving — all open POs in transit">
               {openOrdered === 0 ? (
                 <p className="text-xs text-slate-400">No line data yet — click Sync to pull units & received quantities.</p>
               ) : (
                 <>
-                  <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-3 mb-2">
                     <span className="text-xs font-semibold text-slate-700">
                       {openReceived.toLocaleString()} / {openOrdered.toLocaleString()} units received
                     </span>
@@ -166,19 +181,34 @@ export function Dashboard({ shipheroConnected }: { shipheroConnected: boolean })
                     </div>
                     <span className="text-xs font-medium text-slate-500 tabular-nums">{receivingPct}%</span>
                   </div>
-                  {inProgress.length === 0 ? (
-                    <p className="text-[11px] text-slate-400">No POs are part-received right now.</p>
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mb-2 text-[11px] text-slate-500">
+                    <span className="font-medium text-slate-600">{receiving.length} open PO{receiving.length === 1 ? "" : "s"}</span>
+                    {partCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400" />{partCount} part-received</span>}
+                    {awaitingCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300" />{awaitingCount} awaiting</span>}
+                    {completeCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />{completeCount} booked in</span>}
+                  </div>
+                  {receiving.length === 0 ? (
+                    <p className="text-[11px] text-slate-400">No open POs with line data — click Sync.</p>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5">
-                      {inProgress.slice(0, 8).map((p) => (
-                        <div key={p.poNumber} className="flex items-center gap-2 text-xs">
+                    <div className="-mx-1 px-1 divide-y divide-slate-50">
+                      {receiving.map((p) => (
+                        <button
+                          key={p.poNumber}
+                          onClick={() => setSelected(p)}
+                          title="View receiving breakdown"
+                          className="w-full flex items-center gap-2 text-xs py-1 px-1 -mx-1 rounded hover:bg-indigo-50/60 text-left"
+                        >
                           <span className="font-mono text-slate-500 w-16 shrink-0">{p.poNumber}</span>
                           <span className="text-slate-600 truncate flex-1 min-w-0">{p.products[0] ?? "—"}</span>
-                          <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden shrink-0">
-                            <div className="h-full bg-indigo-400" style={{ width: `${p.pct}%` }} />
+                          <span className="tabular-nums text-slate-500 w-16 text-right shrink-0">{p.unitsReceived.toLocaleString()}/{p.unitsOrdered.toLocaleString()}</span>
+                          <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden shrink-0">
+                            <div
+                              className={`h-full ${p.state === "complete" ? "bg-emerald-400" : p.state === "awaiting" ? "bg-slate-300" : "bg-indigo-400"}`}
+                              style={{ width: `${p.pct}%` }}
+                            />
                           </div>
-                          <span className="tabular-nums text-slate-400 w-8 text-right shrink-0">{p.pct}%</span>
-                        </div>
+                          <span className="tabular-nums text-slate-400 w-9 text-right shrink-0">{p.pct}%</span>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -315,6 +345,10 @@ export function Dashboard({ shipheroConnected }: { shipheroConnected: boolean })
           </>
         )}
       </div>
+
+      {selected && (
+        <PoBreakdownModal po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }

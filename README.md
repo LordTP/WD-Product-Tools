@@ -125,17 +125,28 @@ docs/             SHIPHERO_API_REFERENCE.md (verified GraphQL shapes for editing
 - After adding a new GraphQL field, **Sync** to repopulate the cache.
 - Statuses are free-text (no enum / no list API) — the valid set is seeded in `po_statuses` from the ShipHero admin screen.
 
-## Deploy (DigitalOcean droplet)
+## Login / auth
+One shared team password gates the whole app. Set **`APP_PASSWORD`**; the Next.js
+`proxy` (v16's middleware) redirects any unauthenticated request to **`/login`**.
+On success it sets an httpOnly cookie holding a **salted SHA-256 of the password**
+(never the password itself). Leave `APP_PASSWORD` blank in local dev to disable the
+gate. Sign-out is in the sidebar footer.
+
+## Deploy (DigitalOcean droplet + Caddy HTTPS)
+The compose stack runs the **app** (internal) behind **Caddy**, which auto-provisions
+Let's Encrypt TLS for `wanderdoll.truepathgroup.co.uk` (set in `Caddyfile`).
 
 ```bash
-docker compose up -d --build      # serves :3000, SQLite on the `po-data` volume
+# on the droplet, in the repo dir:
+cp .env.example .env          # then edit: set APP_PASSWORD + SHIPHERO_REFRESH_TOKEN
+docker compose up -d --build  # app on the internal net; Caddy serves 80/443 with TLS
 ```
-Put Nginx/Caddy in front for HTTPS at **wanderdoll.truepathgroup.co.uk**.
+Prereqs: a DNS **A record** for the domain → droplet IP, and ports **80/443** open.
+SQLite lives on the `po-data` volume (survives redeploys); certs on `caddy-data`.
 
 ## Roadmap / not built yet
 - **Receiving webhook** (real-time `quantity_received`) — PAUSED; needs the public deploy URL (can't register against localhost). Sync covers received qty meanwhile.
-- **Login / auth gate** (internal only) before go-live.
-- **Deploy** to wanderdoll.truepathgroup.co.uk.
+- **Direct Shopify push** (Admin API `productSet`) — planned; scopes `write_products` + `write_inventory` + `write_publications`, offline OAuth token.
 - Build-a-PO-from-scratch, duplicate PO, notes/comments.
 
 Open items to confirm with the team (Products): Scenario **A vs B** (Will's cost-swap sign-off),
