@@ -3,6 +3,8 @@ FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
+# Match the npm that generated package-lock.json (v11) so `npm ci` resolves identically.
+RUN npm install -g npm@11
 COPY package.json package-lock.json ./
 RUN npm ci
 
