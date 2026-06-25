@@ -9,7 +9,9 @@ import type { PoSummary } from "@/lib/shiphero/po-pull";
 import type { SizeMap } from "@/lib/sizes";
 import { PoBreakdownModal } from "./po-breakdown-modal";
 
-const DONE = ["closed", "canceled", "cancelled"]; // statuses that aren't "open"
+// Statuses that aren't "open" — Delivered has landed, so it's excluded from all
+// open/on-order KPIs, breakdowns and the receiving panel (same as closed/cancelled).
+const DONE = ["closed", "canceled", "cancelled", "delivered"];
 const isOpen = (p: PoSummary) => !DONE.includes(p.status.trim().toLowerCase());
 const gbp = (n: number) =>
   "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -76,9 +78,9 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
   const openReceived = open.reduce((a, p) => a + p.unitsReceived, 0);
   const outstanding = Math.max(openOrdered - openReceived, 0);
   const receivingPct = openOrdered ? Math.round((openReceived / openOrdered) * 100) : 0;
-  // Open POs with line data that are still in transit — exclude Delivered (they've landed).
+  // Open POs with line data still in transit (Delivered already excluded via isOpen).
   const receiving = open
-    .filter((p) => p.unitsOrdered > 0 && p.status.trim().toLowerCase() !== "delivered")
+    .filter((p) => p.unitsOrdered > 0)
     .map((p) => {
       const pct = Math.round((p.unitsReceived / p.unitsOrdered) * 100);
       const state = p.unitsReceived === 0 ? "awaiting" : p.unitsReceived >= p.unitsOrdered ? "complete" : "part";
