@@ -549,6 +549,14 @@ function PoDetailModal({
 
   const pct = loaded && loaded.unitsOrdered ? Math.round((loaded.unitsReceived / loaded.unitsOrdered) * 100) : 0;
 
+  // Display lines small→large by size (sizeMap.order); unknown/bracket sizes sink to the end.
+  // Display-only — edits/save still work off loaded.lines (keyed by SKU).
+  const sizeRank = (sku: string) => {
+    const i = sizeMap.order.indexOf(deriveSizeFromSku(sku, sizeMap));
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  const orderedLines = loaded ? [...loaded.lines].sort((a, b) => sizeRank(a.sku) - sizeRank(b.sku)) : [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[88vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -639,7 +647,7 @@ function PoDetailModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {loaded!.lines.map((l, i) => {
+                  {orderedLines.map((l, i) => {
                     const linePct = l.quantity ? Math.round((l.quantityReceived / l.quantity) * 100) : 0;
                     const done = linePct >= 100;
                     const edited = lineChanged(l);
