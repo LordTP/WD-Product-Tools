@@ -76,9 +76,9 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
   const openReceived = open.reduce((a, p) => a + p.unitsReceived, 0);
   const outstanding = Math.max(openOrdered - openReceived, 0);
   const receivingPct = openOrdered ? Math.round((openReceived / openOrdered) * 100) : 0;
-  // Every open PO with line data — in transit, awaiting, or fully booked in.
+  // Open POs with line data that are still in transit — exclude Delivered (they've landed).
   const receiving = open
-    .filter((p) => p.unitsOrdered > 0)
+    .filter((p) => p.unitsOrdered > 0 && p.status.trim().toLowerCase() !== "delivered")
     .map((p) => {
       const pct = Math.round((p.unitsReceived / p.unitsOrdered) * 100);
       const state = p.unitsReceived === 0 ? "awaiting" : p.unitsReceived >= p.unitsOrdered ? "complete" : "part";
@@ -113,10 +113,10 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-5 shrink-0">
+      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-5 shrink-0">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-sm text-slate-900">Dashboard</span>
-          <span className="text-xs text-slate-400">purchase orders overview</span>
+          <span className="hidden sm:inline text-xs text-slate-400">purchase orders overview</span>
         </div>
         <div className="flex items-center gap-3">
           {lastSyncedAt && <span className="text-[11px] text-slate-400">synced {timeAgo(lastSyncedAt)}</span>}
@@ -135,7 +135,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-auto p-5 space-y-5">
+      <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-5 space-y-4 sm:space-y-5">
         {error && <div className="text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded p-2">{error}</div>}
 
         {pos && all.length === 0 ? (
@@ -224,13 +224,13 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
                 ) : (
                   <div className="space-y-2">
                     {byStatus.map((g) => (
-                      <div key={g.key} className="flex items-center gap-3 text-xs">
-                        <span className="w-36 truncate text-slate-600">{g.key}</span>
+                      <div key={g.key} className="flex items-center gap-2 sm:gap-3 text-xs">
+                        <span className="w-24 sm:w-36 truncate text-slate-600">{g.key}</span>
                         <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
                           <div className="h-full bg-indigo-400/80" style={{ width: `${(g.value / maxStatusValue) * 100}%` }} />
                         </div>
                         <span className="w-8 text-right tabular-nums text-slate-500">{g.count}</span>
-                        <span className="w-20 text-right tabular-nums font-medium text-slate-700">{gbp(g.value)}</span>
+                        <span className="w-16 sm:w-20 text-right tabular-nums font-medium text-slate-700">{gbp(g.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -310,7 +310,8 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
               {overdue.length === 0 ? (
                 <p className="text-xs text-emerald-600">Nothing overdue — every open PO is within its expected date. 🎉</p>
               ) : (
-                <table className="w-full text-xs">
+                <div className="overflow-x-auto -mx-1 px-1">
+                <table className="w-full min-w-[44rem] text-xs">
                   <thead>
                     <tr className="text-left text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
                       <th className="font-medium py-1.5 pr-4">PO</th>
@@ -336,6 +337,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </Panel>
 

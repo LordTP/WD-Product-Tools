@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Poppins, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
+import { AppShell } from "@/components/app-shell";
 
 // Poppins to match the team's Excel: Regular for body, Bold for headings.
 const poppins = Poppins({
@@ -22,12 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${mono.variable} h-full`}>
       <body className="h-full antialiased">
-        <div className="flex h-full">
-          <Sidebar />
-          <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-100">
-            {children}
-          </main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

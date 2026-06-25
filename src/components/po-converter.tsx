@@ -122,6 +122,11 @@ export function PoConverter({
     ? result.pos.filter((p) => p.vendorResolved && p.vendorId != null && p.statusResolved && p.lines.every((l) => l.status === "ok"))
     : [];
   const canPush = shipheroConnected && result != null && result.ready && pushablePos.length > 0;
+  // Vendor name matched but ShipHero ID is missing (e.g. mapped manually without a sync) —
+  // looks "resolved" but can't be pushed. Surface it instead of greying silently.
+  const vendorsMissingId = result
+    ? [...new Set(result.pos.filter((p) => p.vendorResolved && p.vendorId == null).map((p) => p.vendor || p.alias))]
+    : [];
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -172,9 +177,11 @@ export function PoConverter({
             title={
               !shipheroConnected
                 ? "Connect ShipHero to push"
-                : pushablePos.length === 0
-                  ? "Resolve vendors/statuses first"
-                  : "Review and push to ShipHero"
+                : vendorsMissingId.length > 0
+                  ? "Vendor missing its ShipHero ID — Sync from ShipHero on the Vendors page"
+                  : pushablePos.length === 0
+                    ? "Resolve vendors/statuses first"
+                    : "Review and push to ShipHero"
             }
             className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 font-medium ${
               canPush ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -262,6 +269,15 @@ export function PoConverter({
           shipheroVendors={shipheroVendors}
           onSaved={refreshVendors}
         />
+      )}
+
+      {/* Vendor name matched but no ShipHero ID — push blocked until a vendor sync fills it in */}
+      {vendorsMissingId.length > 0 && (
+        <div className="bg-amber-50 border-b border-amber-200 px-5 py-2.5 text-sm text-amber-800 shrink-0">
+          Vendor mapped but missing its ShipHero ID:{" "}
+          <span className="font-medium">{vendorsMissingId.join(", ")}</span> — push is disabled until you{" "}
+          <a href="/vendors" className="underline font-medium">Sync from ShipHero</a> on the Vendors page (this fills in the ID).
+        </div>
       )}
 
       {/* Required-field block */}

@@ -26,10 +26,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
   const pathname = usePathname();
-  // No shell on the login page.
-  if (pathname === "/login") return null;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -37,7 +35,11 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+    <aside
+      className={`fixed inset-y-0 left-0 z-40 w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 ${
+        open ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
       <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-200">
         <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-white text-[11px] font-bold">
           WD
@@ -59,6 +61,7 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.soon ? "#" : item.href}
+                  onClick={onNavigate}
                   aria-disabled={item.soon}
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm mb-0.5 transition-colors ${
                     active
