@@ -78,6 +78,14 @@ export async function getCachedSummaries(): Promise<{ pos: PoSummary[]; lastSync
   return { pos, lastSyncedAt };
 }
 
+/** All cached lines keyed by PO number (for the line-level export). No API call. */
+export async function getCachedLinesByPo(): Promise<Record<string, PoLineDetail[]>> {
+  const rows = await db.select().from(shipheroPoCache);
+  const out: Record<string, PoLineDetail[]> = {};
+  for (const r of rows) out[r.poNumber] = parse<PoLineDetail[]>(r.lines, []);
+  return out;
+}
+
 /** The ShipHero id to address this PO in mutations (global id preferred). */
 export async function getPoMutationId(poNumber: string): Promise<string | null> {
   const [row] = await db.select().from(shipheroPoCache).where(eq(shipheroPoCache.poNumber, poNumber));

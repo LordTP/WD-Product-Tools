@@ -83,6 +83,8 @@ export function PoHistory({
   const [error, setError] = useState<string | null>(null);
   const [openPo, setOpenPo] = useState<PoSummary | null>(null);
   const [details, setDetails] = useState<Record<string, PoDetail | "loading" | { error: string }>>({});
+  const [exportChooser, setExportChooser] = useState(false);
+  const [exportingLines, setExportingLines] = useState(false);
 
   // Reads the LOCAL CACHE — instant, no API credits.
   const load = useCallback(async () => {
@@ -207,8 +209,21 @@ export function PoHistory({
 
   const activeFilterCount = Object.values(colFilters).filter((v) => v.length > 0).length;
 
-  // Export exactly what's on screen (current filters + search) to CSV/Excel.
-  function exportCsv() {
+  function downloadCsv(csv: string, name: string) {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const stamp = () => new Date().toISOString().slice(0, 10);
+
+  // General export: one row per PO (current filters + search).
+  function exportGeneral() {
+    setExportChooser(false);
     const rows = filtered.map((p) => ({
       "PO Number": p.poNumber,
       Product: p.products.join(" | "),
@@ -217,14 +232,48 @@ export function PoHistory({
       "PO Date": p.poDate?.slice(0, 10) ?? "",
       Total: p.totalPrice ?? "",
     }));
-    const csv = Papa.unparse(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `wander_doll_po_history_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(Papa.unparse(rows), `wander_doll_po_history_${stamp()}.csv`);
+  }
+
+  // Line-level export: one row per size/SKU (size-ordered) across the filtered POs.
+  async function exportLines() {
+    setExportingLines(true);
+    try {
+      const res = await fetch("/api/po/export-lines");
+      const data = await res.json();
+      const byPo: Record<string, PoLineDetail[]> = data.lines ?? {};
+      const rank = (sku: string) => {
+        const i = sizeMap.order.indexOf(deriveSizeFromSku(sku, sizeMap));
+        return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+      };
+      const rows: Record<string, string | number>[] = [];
+      for (const p of filtered) {
+        const lines = [...(byPo[p.poNumber] ?? [])].sort((a, b) => rank(a.sku) - rank(b.sku));
+        for (const l of lines) {
+          const qty = Number(l.quantity) || 0;
+          const price = Number(l.price) || 0;
+          rows.push({
+            "PO Number": p.poNumber,
+            Product: l.productName || p.products.join(" | "),
+            Size: deriveSizeFromSku(l.sku, sizeMap),
+            SKU: l.sku,
+            "Qty Ordered": l.quantity,
+            "Qty Received": l.quantityReceived,
+            "Unit Price": l.price,
+            "Line Total": (qty * price).toFixed(2),
+            Vendor: p.vendorName ?? "",
+            Status: p.status,
+            "PO Date": p.poDate?.slice(0, 10) ?? "",
+          });
+        }
+      }
+      downloadCsv(Papa.unparse(rows), `wander_doll_po_lines_${stamp()}.csv`);
+      setExportChooser(false);
+    } catch {
+      setError("Line-level export failed.");
+    } finally {
+      setExportingLines(false);
+    }
   }
 
   const syncedAgo = lastSyncedAt ? timeAgo(lastSyncedAt) : null;
@@ -270,7 +319,7 @@ export function PoHistory({
         </label>
         {syncedAgo && <span className="text-[11px] text-slate-400">synced {syncedAgo}</span>}
         <button
-          onClick={exportCsv}
+          onClick={() => setExportChooser(true)}
           disabled={filtered.length === 0}
           title="Download the current view as CSV (Excel)"
           className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1.5"
@@ -395,6 +444,38 @@ export function PoHistory({
           onRefresh={() => loadDetail(openPo.poNumber, true)}
           onSaved={applyDetail}
         />
+      )}
+
+      {exportChooser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !exportingLines && setExportChooser(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-slate-900">Export {filtered.length} PO{filtered.length === 1 ? "" : "s"}</p>
+            <p className="text-xs text-slate-400 mt-0.5 mb-4">Choose the level of detail. Both respect your current filters.</p>
+            <div className="space-y-2">
+              <button
+                onClick={exportGeneral}
+                disabled={exportingLines}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50"
+              >
+                <p className="text-sm font-medium text-slate-800">General</p>
+                <p className="text-[11px] text-slate-500">One row per PO — number, product, vendor, status, date, total.</p>
+              </button>
+              <button
+                onClick={exportLines}
+                disabled={exportingLines}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50"
+              >
+                <p className="text-sm font-medium text-slate-800">{exportingLines ? "Preparing…" : "Line-level detail"}</p>
+                <p className="text-[11px] text-slate-500">One row per size/SKU — qty ordered &amp; received, unit price, line total.</p>
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setExportChooser(false)} disabled={exportingLines} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
