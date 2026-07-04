@@ -77,10 +77,9 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
   const openOrdered = open.reduce((a, p) => a + p.unitsOrdered, 0);
   const openReceived = open.reduce((a, p) => a + p.unitsReceived, 0);
   const outstanding = Math.max(openOrdered - openReceived, 0);
-  const receivingPct = openOrdered ? Math.round((openReceived / openOrdered) * 100) : 0;
-  // Open POs with line data still in transit (Delivered already excluded via isOpen).
+  // Receiving panel: only POs whose status is "In transit" (actually on their way).
   const receiving = open
-    .filter((p) => p.unitsOrdered > 0)
+    .filter((p) => p.unitsOrdered > 0 && p.status.trim().toLowerCase() === "in transit")
     .map((p) => {
       const pct = Math.round((p.unitsReceived / p.unitsOrdered) * 100);
       const state = p.unitsReceived === 0 ? "awaiting" : p.unitsReceived >= p.unitsOrdered ? "complete" : "part";
@@ -94,6 +93,10 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
   const awaitingCount = receiving.filter((p) => p.state === "awaiting").length;
   const partCount = receiving.filter((p) => p.state === "part").length;
   const completeCount = receiving.filter((p) => p.state === "complete").length;
+  // Totals for the panel bar (in-transit POs only).
+  const transitOrdered = receiving.reduce((a, p) => a + p.unitsOrdered, 0);
+  const transitReceived = receiving.reduce((a, p) => a + p.unitsReceived, 0);
+  const transitPct = transitOrdered ? Math.round((transitReceived / transitOrdered) * 100) : 0;
 
   // Upcoming deliveries: open POs whose expected date is today or later.
   const upcoming = open
@@ -165,34 +168,31 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
               />
             </div>
 
-            {/* Receiving progress */}
-            <Panel title="Receiving — all open POs in transit">
-              {openOrdered === 0 ? (
-                <p className="text-xs text-slate-400">No line data yet — click Sync to pull units & received quantities.</p>
+            {/* Receiving progress — POs currently In transit */}
+            <Panel title="Receiving — POs in transit">
+              {receiving.length === 0 ? (
+                <p className="text-xs text-slate-400">No POs currently in transit.</p>
               ) : (
                 <>
                   <div className="flex items-center gap-3 mb-2">
                     <span className="text-xs font-semibold text-slate-700">
-                      {openReceived.toLocaleString()} / {openOrdered.toLocaleString()} units received
+                      {transitReceived.toLocaleString()} / {transitOrdered.toLocaleString()} units received
                     </span>
                     <div className="flex-1 h-2.5 bg-slate-200 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${receivingPct >= 100 ? "bg-emerald-500" : "bg-indigo-500"}`}
-                        style={{ width: `${Math.min(receivingPct, 100)}%` }}
+                        className={`h-full ${transitPct >= 100 ? "bg-emerald-500" : "bg-indigo-500"}`}
+                        style={{ width: `${Math.min(transitPct, 100)}%` }}
                       />
                     </div>
-                    <span className="text-xs font-medium text-slate-500 tabular-nums">{receivingPct}%</span>
+                    <span className="text-xs font-medium text-slate-500 tabular-nums">{transitPct}%</span>
                   </div>
                   <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mb-2 text-[11px] text-slate-500">
-                    <span className="font-medium text-slate-600">{receiving.length} open PO{receiving.length === 1 ? "" : "s"}</span>
+                    <span className="font-medium text-slate-600">{receiving.length} in transit</span>
                     {partCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400" />{partCount} part-received</span>}
                     {awaitingCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300" />{awaitingCount} awaiting</span>}
                     {completeCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />{completeCount} booked in</span>}
                   </div>
-                  {receiving.length === 0 ? (
-                    <p className="text-[11px] text-slate-400">No open POs with line data — click Sync.</p>
-                  ) : (
-                    <div className="-mx-1 px-1 divide-y divide-slate-50">
+                  <div className="-mx-1 px-1 divide-y divide-slate-50">
                       {receiving.map((p) => (
                         <button
                           key={p.poNumber}
@@ -212,8 +212,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
                           <span className="tabular-nums text-slate-400 w-9 text-right shrink-0">{p.pct}%</span>
                         </button>
                       ))}
-                    </div>
-                  )}
+                  </div>
                 </>
               )}
             </Panel>
