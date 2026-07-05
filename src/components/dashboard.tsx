@@ -43,7 +43,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
     load();
   }, [load]);
 
-  async function sync() {
+  async function sync(full = false) {
     if (!shipheroConnected) return;
     setSyncing(true);
     setError(null);
@@ -51,7 +51,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
       const res = await fetch("/api/po/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ since: "2024-01-01" }),
+        body: JSON.stringify({ since: "2024-01-01", full }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed.");
@@ -126,8 +126,17 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
         <div className="flex items-center gap-3">
           {lastSyncedAt && <span className="text-[11px] text-slate-400">synced {timeAgo(lastSyncedAt)}</span>}
           <button
-            onClick={sync}
+            onClick={() => sync(true)}
             disabled={syncing || !shipheroConnected}
+            title="Re-pull every PO from ShipHero (slower; use after admin changes or a first setup)"
+            className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Full resync
+          </button>
+          <button
+            onClick={() => sync(false)}
+            disabled={syncing || !shipheroConnected}
+            title="Pull only POs changed since the last sync (fast)"
             className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 ${
               shipheroConnected ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
             } disabled:opacity-60`}

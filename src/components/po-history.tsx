@@ -104,7 +104,7 @@ export function PoHistory({
   }, [mappedOnly]);
 
   // The only path that hits ShipHero — refreshes the cache, then re-reads it.
-  async function sync() {
+  async function sync(full = false) {
     if (!shipheroConnected) return;
     setSyncing(true);
     setError(null);
@@ -112,7 +112,7 @@ export function PoHistory({
       const res = await fetch("/api/po/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ since: sinceFromMonths(rangeMonths) }),
+        body: JSON.stringify({ since: sinceFromMonths(rangeMonths), full }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed.");
@@ -330,9 +330,17 @@ export function PoHistory({
           Export ({filtered.length})
         </button>
         <button
-          onClick={sync}
+          onClick={() => sync(true)}
           disabled={syncing || !shipheroConnected}
-          title={shipheroConnected ? "Refresh the cache from ShipHero" : "Connect ShipHero first"}
+          title="Re-pull every PO in the selected range (slower; use after admin changes or first setup)"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          Full resync
+        </button>
+        <button
+          onClick={() => sync(false)}
+          disabled={syncing || !shipheroConnected}
+          title={shipheroConnected ? "Pull only POs changed since the last sync (fast)" : "Connect ShipHero first"}
           className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 ${
             shipheroConnected ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
           } disabled:opacity-60`}
@@ -343,7 +351,7 @@ export function PoHistory({
           >
             <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
           </svg>
-          {syncing ? "Syncing…" : "Sync from ShipHero"}
+          {syncing ? "Syncing…" : "Sync"}
         </button>
       </Header>
 

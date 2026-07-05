@@ -82,20 +82,22 @@ function toPoDetail(node: RawNode, sizeMap: SizeMap): PoDetail {
   };
 }
 
-// Caps keep one page under the 4004 credit ceiling: 50 POs × 40 lines ≈ 2051.
-const PAGE = 50;
-const LINE_CAP = 40;
-const MAX_PAGES = 20;
+// Caps keep one page well under the 4004 credit ceiling: 25 POs × 40 lines ≈ 1050.
+// Smaller pages = more headroom, so a big backfill pages through without one query
+// ever exceeding the cap. Routine syncs are incremental (updated_from) so they're tiny.
+const PAGE = 25;
+const LINE_CAP = 40; // keep high — don't undercount a PO's line items
+const MAX_PAGES = 400; // up to ~10k POs on a full backfill
 
 async function fetchPage(
-  since: string,
+  filter: string,
   after: string | null,
   sizeMap: SizeMap,
 ): Promise<{ pos: PoDetail[]; nextCursor: string | null }> {
   const afterArg = after ? `, after: "${after}"` : "";
   const query = `
     query {
-      purchase_orders(po_date_from: "${since}") {
+      purchase_orders(${filter}) {
         complexity
         data(first: ${PAGE}${afterArg}) {
           edges {
@@ -125,13 +127,20 @@ async function fetchPage(
 }
 
 /** Paginated pull of POs WITH line items (units + received). */
-export async function fetchPurchaseOrders(sinceISO: string, sizeMap: SizeMap = DEFAULT_SIZE_MAP): Promise<PoDetail[]> {
-  const since = safeDate(sinceISO);
+export async function fetchPurchaseOrders(
+  opts: { poDateFrom?: string; updatedFrom?: string },
+  sizeMap: SizeMap = DEFAULT_SIZE_MAP,
+): Promise<PoDetail[]> {
+  // Incremental (updated_from) pulls only POs whose line items changed since the
+  // last sync — tiny + scale-independent. Full (po_date_from) backfills everything.
+  const filter = opts.updatedFrom
+    ? `updated_from: "${opts.updatedFrom}"`
+    : `po_date_from: "${safeDate(opts.poDateFrom ?? "")}"`;
   const out: PoDetail[] = [];
   let after: string | null = null;
   let pages = 0;
   do {
-    const { pos, nextCursor } = await fetchPage(since, after, sizeMap);
+    const { pos, nextCursor } = await fetchPage(filter, after, sizeMap);
     out.push(...pos);
     after = nextCursor;
     pages += 1;

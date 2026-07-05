@@ -130,8 +130,8 @@ interface GraphqlResult<T> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Keep interactive calls responsive: at most a few short waits, then surface a
 // clear "rate-limited" error the UI can offer a Retry on (pool refills 60/sec).
-const MAX_THROTTLE_RETRIES = 2;
-const MAX_THROTTLE_WAIT_MS = 5000;
+const MAX_THROTTLE_RETRIES = 10;
+const MAX_THROTTLE_WAIT_MS = 35000;
 
 /** Run a GraphQL query/mutation. Refreshes the token once on 401, and waits +
  *  retries on credit throttling (ShipHero refills 60 credits/sec). */

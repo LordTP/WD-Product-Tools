@@ -24,9 +24,33 @@ const parse = <T>(s: string | null, fallback: T): T => {
   }
 };
 
-/** Pull POs (headers + line items) from ShipHero into the cache. */
-export async function syncPoCache(sinceISO: string): Promise<{ count: number; syncedAt: string }> {
-  const pos = await fetchPurchaseOrders(sinceISO, await getSizeMap());
+/** Most recent header sync time across the cache (drives incremental syncs). */
+async function getLastSyncedAt(): Promise<string | null> {
+  const rows = await db.select({ h: shipheroPoCache.headerSyncedAt }).from(shipheroPoCache);
+  return rows.reduce<string | null>((max, r) => (r.h && (!max || r.h > max) ? r.h : max), null);
+}
+
+/**
+ * Pull POs (headers + line items) from ShipHero into the cache.
+ * - Incremental (default): only POs whose line items changed since the last sync
+ *   (`updated_from`) — tiny and cheap regardless of total PO count.
+ * - Full (opts.full, or empty cache): backfill everything from `sinceISO`.
+ */
+export async function syncPoCache(
+  sinceISO: string,
+  opts: { full?: boolean } = {},
+): Promise<{ count: number; syncedAt: string; mode: "incremental" | "full" }> {
+  const sizeMap = await getSizeMap();
+  const lastSyncedAt = await getLastSyncedAt();
+  const incremental = !opts.full && !!lastSyncedAt;
+  // Re-pull with a 10-min overlap so nothing in-flight around the last sync is missed.
+  const updatedFrom = incremental
+    ? new Date(new Date(lastSyncedAt!).getTime() - 10 * 60_000).toISOString()
+    : undefined;
+  const pos = await fetchPurchaseOrders(
+    incremental ? { updatedFrom } : { poDateFrom: sinceISO },
+    sizeMap,
+  );
   const syncedAt = now();
   for (const p of pos) {
     if (!p.poNumber) continue;
@@ -48,7 +72,7 @@ export async function syncPoCache(sinceISO: string): Promise<{ count: number; sy
       .values(row)
       .onConflictDoUpdate({ target: shipheroPoCache.poNumber, set: row });
   }
-  return { count: pos.length, syncedAt };
+  return { count: pos.length, syncedAt, mode: incremental ? "incremental" : "full" };
 }
 
 function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
