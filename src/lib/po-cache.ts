@@ -4,7 +4,19 @@
 
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { shipheroPoCache } from "@/db/schema";
+import { shipheroPoCache, appState } from "@/db/schema";
+
+const LAST_SYNC_KEY = "po_last_synced_at";
+async function setLastSyncRun(ts: string): Promise<void> {
+  await db
+    .insert(appState)
+    .values({ key: LAST_SYNC_KEY, value: ts })
+    .onConflictDoUpdate({ target: appState.key, set: { value: ts } });
+}
+async function getLastSyncRun(): Promise<string | null> {
+  const [r] = await db.select().from(appState).where(eq(appState.key, LAST_SYNC_KEY));
+  return r?.value ?? null;
+}
 import {
   fetchPurchaseOrders,
   fetchPurchaseOrderDetail,
@@ -72,6 +84,9 @@ export async function syncPoCache(
       .values(row)
       .onConflictDoUpdate({ target: shipheroPoCache.poNumber, set: row });
   }
+  // Persist the run time so "synced Xh ago" reflects the last sync even when an
+  // incremental pull changed no rows (otherwise it'd look like Sync did nothing).
+  await setLastSyncRun(syncedAt);
   return { count: pos.length, syncedAt, mode: incremental ? "incremental" : "full" };
 }
 
@@ -91,14 +106,19 @@ function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
   };
 }
 
-/** Cached PO summaries (with units) + most recent sync time. No API call. */
+/** Cached PO summaries (with units) + last sync-run time. No API call. */
 export async function getCachedSummaries(): Promise<{ pos: PoSummary[]; lastSyncedAt: string | null }> {
   const rows = await db.select().from(shipheroPoCache).orderBy(desc(shipheroPoCache.poDate));
   const pos = rows.map(rowToSummary);
-  const lastSyncedAt = rows.reduce<string | null>(
-    (max, r) => (r.headerSyncedAt && (!max || r.headerSyncedAt > max) ? r.headerSyncedAt : max),
-    null,
-  );
+  // Prefer the persisted sync-run time (survives runs with 0 changes); fall back to
+  // the newest per-row header sync time for caches from before this was tracked.
+  const persisted = await getLastSyncRun();
+  const lastSyncedAt =
+    persisted ??
+    rows.reduce<string | null>(
+      (max, r) => (r.headerSyncedAt && (!max || r.headerSyncedAt > max) ? r.headerSyncedAt : max),
+      null,
+    );
   return { pos, lastSyncedAt };
 }
 

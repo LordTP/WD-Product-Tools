@@ -107,3 +107,10 @@ export const poLines = sqliteTable("po_lines", {
   unitCost: text("unit_cost"),
   sellAhead: integer("sell_ahead", { mode: "boolean" }).notNull().default(false),
 });
+
+// Small key/value store for app-level state (e.g. the last sync-run timestamp,
+// which must persist even when an incremental sync changed no PO rows).
+export const appState = sqliteTable("app_state", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+});

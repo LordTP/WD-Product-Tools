@@ -33,6 +33,12 @@ export function initDb() {
       console.error("[db] migration failed:", err);
     }
   }
+  // Ensure the key/value state table exists (idempotent; not part of a migration).
+  try {
+    sqlite.exec("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT)");
+  } catch (err) {
+    console.error("[db] app_state init failed:", err);
+  }
   try {
     const row = sqlite
       .prepare("SELECT COUNT(*) AS n FROM shiphero_vendors")
