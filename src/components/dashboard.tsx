@@ -24,6 +24,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
   const [pos, setPos] = useState<PoSummary[] | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<PoSummary | null>(null);
 
@@ -56,6 +57,8 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed.");
       await load();
+      setLastSyncedAt(data.syncedAt); // reflect the run even if 0 changed
+      setSyncMsg(data.count > 0 ? `${data.count} PO${data.count === 1 ? "" : "s"} updated` : "up to date");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed.");
     } finally {
@@ -124,7 +127,11 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
           <span className="hidden sm:inline text-xs text-slate-400">purchase orders overview</span>
         </div>
         <div className="flex items-center gap-3">
-          {lastSyncedAt && <span className="text-[11px] text-slate-400">synced {timeAgo(lastSyncedAt)}</span>}
+          {lastSyncedAt && (
+            <span className="text-[11px] text-slate-400">
+              synced {timeAgo(lastSyncedAt)}{syncMsg && <span className="text-emerald-600"> · {syncMsg}</span>}
+            </span>
+          )}
           <button
             onClick={() => sync(true)}
             disabled={syncing || !shipheroConnected}

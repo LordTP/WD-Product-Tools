@@ -80,6 +80,7 @@ export function PoHistory({
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openPo, setOpenPo] = useState<PoSummary | null>(null);
   const [details, setDetails] = useState<Record<string, PoDetail | "loading" | { error: string }>>({});
@@ -117,6 +118,8 @@ export function PoHistory({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed.");
       await load();
+      setLastSyncedAt(data.syncedAt); // reflect the run even if 0 changed
+      setSyncMsg(data.count > 0 ? `${data.count} PO${data.count === 1 ? "" : "s"} updated` : "up to date");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed.");
     } finally {
@@ -317,7 +320,11 @@ export function PoHistory({
             <option value="all">All POs</option>
           </select>
         </label>
-        {syncedAgo && <span className="text-[11px] text-slate-400">synced {syncedAgo}</span>}
+        {syncedAgo && (
+          <span className="text-[11px] text-slate-400">
+            synced {syncedAgo}{syncMsg && <span className="text-emerald-600"> · {syncMsg}</span>}
+          </span>
+        )}
         <button
           onClick={() => setExportChooser(true)}
           disabled={filtered.length === 0}
