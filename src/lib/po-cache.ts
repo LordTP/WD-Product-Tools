@@ -101,6 +101,30 @@ const VENDOR_OVERRIDES: Record<string, string> = {
 const vendorOverrideFor = (poNumber: string): string | undefined =>
   VENDOR_OVERRIDES[poNumber.replace(/\s+/g, "").toUpperCase()];
 
+// Renaming a PO number in ShipHero orphans its old-numbered cache row (the cache
+// is keyed on po_number), leaving two rows for the same underlying PO. Dedupe by
+// the real ShipHero id (legacy id, then global id), keeping the most-recently-
+// synced copy — so a renamed PO shows once, as its current version.
+type PoRow = typeof shipheroPoCache.$inferSelect;
+function dedupeByPoId(rows: PoRow[]): PoRow[] {
+  const byId = new Map<string, PoRow>();
+  const out: PoRow[] = [];
+  for (const r of rows) {
+    const id = r.legacyId ?? r.globalId;
+    if (!id) {
+      out.push(r); // no id to dedupe on — keep as-is
+      continue;
+    }
+    const existing = byId.get(id);
+    if (!existing || (r.headerSyncedAt ?? "") > (existing.headerSyncedAt ?? "")) {
+      byId.set(id, r);
+    }
+  }
+  out.push(...byId.values());
+  // Preserve the incoming poDate-desc ordering.
+  return out.sort((a, b) => (b.poDate ?? "").localeCompare(a.poDate ?? ""));
+}
+
 function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
   const lines = parse<PoLineDetail[]>(r.lines, []);
   return {
@@ -120,7 +144,7 @@ function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
 /** Cached PO summaries (with units) + last sync-run time. No API call. */
 export async function getCachedSummaries(): Promise<{ pos: PoSummary[]; lastSyncedAt: string | null }> {
   const rows = await db.select().from(shipheroPoCache).orderBy(desc(shipheroPoCache.poDate));
-  const pos = rows.map(rowToSummary);
+  const pos = dedupeByPoId(rows).map(rowToSummary);
   // Prefer the persisted sync-run time (survives runs with 0 changes); fall back to
   // the newest per-row header sync time for caches from before this was tracked.
   const persisted = await getLastSyncRun();
