@@ -90,6 +90,17 @@ export async function syncPoCache(
   return { count: pos.length, syncedAt, mode: incremental ? "incremental" : "full" };
 }
 
+// Manual vendor fixups: POs raised in ShipHero without a vendor come back as
+// "Multiple Vendors" and get filtered out of every view (they don't match a
+// mapped alias). ShipHero won't let you edit the vendor after creation, so we
+// override it here by PO number. Matched space-insensitively (ShipHero shows the
+// number as both "PO 458-1" and "PO458-1"). Value must match a mapped vendor name.
+const VENDOR_OVERRIDES: Record<string, string> = {
+  "PO458-1": "Guangzhou K&C Fashion garment Co.,LTD (Lily)",
+};
+const vendorOverrideFor = (poNumber: string): string | undefined =>
+  VENDOR_OVERRIDES[poNumber.replace(/\s+/g, "").toUpperCase()];
+
 function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
   const lines = parse<PoLineDetail[]>(r.lines, []);
   return {
@@ -97,7 +108,7 @@ function rowToSummary(r: typeof shipheroPoCache.$inferSelect): PoSummary {
     legacyId: r.legacyId,
     globalId: r.globalId,
     status: r.status ?? "",
-    vendorName: r.vendorName,
+    vendorName: vendorOverrideFor(r.poNumber) ?? r.vendorName,
     poDate: r.poDate,
     totalPrice: r.totalPrice,
     products: parse<string[]>(r.products, []),
