@@ -16,6 +16,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Tools",
     items: [
       { href: "/purchase-orders", label: "Purchase Orders", icon: PoIcon },
+      { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/products", label: "Products → Shopify", icon: ProductIcon },
     ],
   },
@@ -152,6 +153,14 @@ function SizeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M3 8v8M21 8v8M3 12h18M7 10v4M11 9v6M15 10v4M19 9v6" />
+    </svg>
+  );
+}
+function ReturnIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H8" />
     </svg>
   );
 }
