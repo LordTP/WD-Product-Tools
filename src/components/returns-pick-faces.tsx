@@ -379,15 +379,15 @@ export function ReturnsPickFaces({
             </table>
           )
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px]">
-            <div className="p-4 overflow-x-auto">
-              <div className="inline-block min-w-full">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] h-full">
+            <div className="p-4 overflow-x-auto flex flex-col min-h-0">
+              <div className="flex-1 flex flex-col gap-2 min-w-[820px] min-h-[440px]">
                 {grid.map((row, r) => (
-                  <div key={r} className="flex gap-1.5 mb-1.5 items-stretch">
-                    <span className="w-5 shrink-0 flex items-center justify-end pr-0.5 font-mono text-[10px] text-slate-300">{r + 1}</span>
+                  <div key={r} className="flex gap-2 flex-1 items-stretch">
+                    <span className="w-5 shrink-0 flex items-center justify-end pr-0.5 font-mono text-[11px] text-slate-300">{r + 1}</span>
                     {row.map((b, c) =>
                       b === null ? (
-                        <div key={c} className="flex-1 min-w-[86px]" />
+                        <div key={c} className="flex-1 min-w-[78px]" />
                       ) : (
                         <BinTile
                           key={b.binName}
@@ -402,7 +402,7 @@ export function ReturnsPickFaces({
                   </div>
                 ))}
               </div>
-              <div className="flex flex-wrap gap-3 mt-3 text-[10px] text-slate-400">
+              <div className="flex flex-wrap gap-3 mt-3 shrink-0 text-[10px] text-slate-400">
                 <Legend cls="border-dashed border-slate-200 bg-white" label="empty" />
                 <Legend cls="border-slate-200 bg-slate-50" label={`1–${settings.binTarget} units`} />
                 <Legend cls="border-rose-300 bg-rose-50" label={`over ${settings.binTarget}`} />
@@ -490,26 +490,33 @@ function BinTile({
     <button
       onClick={onClick}
       title={title}
-      className={`flex-1 min-w-[86px] border rounded-lg px-1.5 py-1 text-left flex flex-col gap-0.5 min-h-[54px] relative transition-opacity ${tone} ${
+      className={`flex-1 min-w-[78px] h-full border rounded-lg px-2 py-1.5 text-left flex flex-col gap-1 min-h-[62px] relative transition-opacity ${tone} ${
         selected ? "ring-2 ring-indigo-400 border-indigo-400" : "hover:border-indigo-300"
       } ${dim ? "opacity-25" : ""}`}
     >
       <div className="flex items-baseline justify-between gap-1">
-        <span className="font-mono text-[10px] text-slate-400">{shortBin(bin.binName)}</span>
-        <span className={`text-sm font-bold leading-none tabular-nums ${bin.state === "empty" ? "text-slate-300" : bin.state === "over" ? "text-rose-600" : "text-slate-800"}`}>
+        <span className="font-mono text-[11px] text-slate-400">{shortBin(bin.binName)}</span>
+        <span className={`text-xl font-bold leading-none tabular-nums ${bin.state === "empty" ? "text-slate-300" : bin.state === "over" ? "text-rose-600" : "text-slate-800"}`}>
           {bin.units || "·"}
         </span>
       </div>
       {top ? (
-        <span className="text-[9.5px] leading-tight text-slate-500 line-clamp-2">
-          {top.productName || top.sku}
-          {bin.items.length > 1 && <span className="text-slate-400"> +{bin.items.length - 1}</span>}
-        </span>
+        <>
+          <span className="text-[11px] leading-tight text-slate-600 line-clamp-3">
+            {top.productName || top.sku}
+            {bin.items.length > 1 && <span className="text-slate-400 font-medium"> +{bin.items.length - 1} more</span>}
+          </span>
+          {bin.oldestDays !== null && (
+            <span className={`mt-auto text-[10px] tabular-nums ${band === "stale" ? "text-rose-600 font-medium" : band === "ageing" ? "text-amber-600" : "text-slate-400"}`}>
+              in bin {ageLabel(bin.oldestDays)}
+            </span>
+          )}
+        </>
       ) : (
-        <span className="text-[9.5px] text-slate-300">free</span>
+        <span className="mt-auto text-[10px] text-slate-300">free</span>
       )}
       {(band === "ageing" || band === "stale") && (
-        <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${band === "stale" ? "bg-rose-500" : "bg-amber-500"}`} />
+        <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${band === "stale" ? "bg-rose-500" : "bg-amber-500"}`} />
       )}
     </button>
   );
