@@ -16,7 +16,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Tools",
     items: [
       { href: "/purchase-orders", label: "Purchase Orders", icon: PoIcon },
-      { href: "/returns", label: "Returns", icon: ReturnIcon },
+      // Hidden for now — Swap QC returns export not ready for the team yet.
+      // { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/products", label: "Products → Shopify", icon: ProductIcon },
     ],
   },
@@ -160,14 +161,7 @@ function SizeIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-function ReturnIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-      <path d="M9 14 4 9l5-5" />
-      <path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H8" />
-    </svg>
-  );
-}
+// ReturnIcon removed with the hidden Returns nav item — re-add both to restore.
 function BinIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
