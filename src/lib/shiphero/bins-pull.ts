@@ -163,28 +163,55 @@ export async function landedDatesForBin(
   return landed;
 }
 
-/** Where a SKU normally lives — its pick face under `destPrefix` (+ qty there). */
-export async function fetchDestinationFace(
+export interface DestCandidate {
+  face: string;
+  qty: number;
+  updatedAt: string | null;
+}
+
+/**
+ * Every pick face this SKU is known to live in, best suggestion first.
+ *
+ * NOTE the prefix: the main faces span PICK-01 … PICK-06 (1,815 locations), so
+ * searching "PICK-01" alone finds barely a tenth of them and most SKUs come back
+ * with no home face. We search "PICK-" and drop the PICK-00 returns bins so we
+ * never suggest moving stock from one returns bin to another.
+ *
+ * Ranking: a face that currently holds stock wins (consolidating there is the
+ * obvious move); otherwise the most recently used face, since SKUs get re-slotted
+ * and the last place it lived is the best guess at where it belongs.
+ */
+export async function fetchDestinationCandidates(
   warehouseId: string,
   sku: string,
-  destPrefix: string,
-): Promise<{ face: string; qty: number } | null> {
+  pickPrefix = "PICK-",
+  excludePrefix = "PICK-00",
+): Promise<DestCandidate[]> {
   const query = `
     query {
-      item_locations(warehouse_id: "${q1(warehouseId)}", sku: "${q1(sku)}", location_name_prefix: "${q1(destPrefix)}") {
-        data(first: 20) { edges { node { quantity location { name } } } }
+      item_locations(warehouse_id: "${q1(warehouseId)}", sku: "${q1(sku)}", location_name_prefix: "${q1(pickPrefix)}") {
+        data(first: 100) { edges { node { quantity updated_at location { name } } } }
       }
     }
   `;
   const { data } = await shipheroGraphql<{
-    item_locations?: { data?: { edges?: Edge<{ quantity?: number; location?: { name?: string } | null }>[] } };
+    item_locations?: {
+      data?: { edges?: Edge<{ quantity?: number; updated_at?: string; location?: { name?: string } | null }>[] };
+    };
   }>(query);
-  const rows = nodesOf(data.item_locations?.data).filter((n) => n.location?.name);
-  if (rows.length === 0) return null;
-  // Prefer the face that actually holds stock; else the first known face.
-  const withStock = rows.filter((r) => Number(r.quantity ?? 0) > 0);
-  const pick = (withStock[0] ?? rows[0])!;
-  return { face: pick.location!.name!, qty: Number(pick.quantity ?? 0) };
+  const rows = nodesOf(data.item_locations?.data)
+    .filter((n) => n.location?.name && !n.location.name.startsWith(excludePrefix))
+    .map<DestCandidate>((n) => ({
+      face: n.location!.name!,
+      qty: Number(n.quantity ?? 0),
+      updatedAt: n.updated_at ?? null,
+    }));
+  return rows.sort(
+    (a, b) =>
+      Number(b.qty > 0) - Number(a.qty > 0) || // holding stock wins
+      (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") || // then most recent
+      b.qty - a.qty,
+  );
 }
 
 /** The account's warehouse id (base64 global id). */

@@ -68,6 +68,7 @@ export function ReturnsPickFaces({
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [openDest, setOpenDest] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -312,14 +313,50 @@ export function ReturnsPickFaces({
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-2 border-b border-slate-100">
+                    <td className="px-4 py-2 border-b border-slate-100 align-top">
                       {p.destFace ? (
                         <>
-                          <span className="font-mono text-xs text-emerald-700 font-semibold">{p.destFace}</span>
-                          <span className="block text-[10px] text-slate-400">{p.destQty ? `holds ${p.destQty}` : "empty face"}</span>
+                          <button
+                            onClick={() => setOpenDest(openDest === p.sku ? null : p.sku)}
+                            className="text-left group"
+                            title="Show every pick face this SKU is known to live in"
+                          >
+                            <span className="font-mono text-xs text-emerald-700 font-semibold group-hover:underline">{p.destFace}</span>
+                            <span className="block text-[10px] text-slate-400">
+                              {p.destQty ? `holds ${p.destQty}` : "last used"}
+                              {p.destCandidates.length > 1 && (
+                                <span className="text-indigo-600"> · +{p.destCandidates.length - 1} more {openDest === p.sku ? "▴" : "▾"}</span>
+                              )}
+                            </span>
+                          </button>
+                          {openDest === p.sku && p.destCandidates.length > 0 && (
+                            <div className="mt-1.5 border border-slate-200 rounded-md bg-white overflow-hidden">
+                              {p.destCandidates.map((c, ci) => (
+                                <div
+                                  key={c.face}
+                                  className={`flex items-center justify-between gap-3 px-2 py-1 text-[11px] ${ci === 0 ? "bg-emerald-50/60" : ""} ${ci ? "border-t border-slate-100" : ""}`}
+                                >
+                                  <span className="font-mono text-slate-700">{c.face}</span>
+                                  <span className="flex items-center gap-2 shrink-0">
+                                    <span className={`tabular-nums ${c.qty > 0 ? "text-emerald-700 font-semibold" : "text-slate-400"}`}>{c.qty > 0 ? `${c.qty} in face` : "empty"}</span>
+                                    <span className="text-slate-400 tabular-nums">{c.updatedAt ? String(c.updatedAt).slice(0, 10) : "—"}</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </>
                       ) : (
-                        <span className="text-[11px] text-slate-300">—</span>
+                        <span
+                          className="text-[11px] text-slate-300"
+                          title={
+                            p.isCollate || p.isSplit
+                              ? "Searched every PICK aisle — this SKU has no known pick face"
+                              : "Not looked up: pick faces are only resolved for SKUs that need collating or are split across bins"
+                          }
+                        >
+                          {p.isCollate || p.isSplit ? "no known face" : "—"}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-2 border-b border-slate-100 text-right">

@@ -129,8 +129,9 @@ export const shipheroBinCache = sqliteTable("shiphero_bin_cache", {
   quantity: integer("quantity").notNull().default(0),
   landedAt: text("landed_at"), // when the stock now in the bin arrived
   itemUpdatedAt: text("item_updated_at"), // ShipHero's row updated_at — change detection
-  destFace: text("dest_face"), // matching PICK-01 face for this SKU
+  destFace: text("dest_face"), // best-guess pick face to return this SKU to
   destQty: integer("dest_qty"),
+  destCandidates: text("dest_candidates"), // JSON [{face,qty,updatedAt}] — all known faces
   syncedAt: text("synced_at"),
 });
 

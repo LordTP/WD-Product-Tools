@@ -13,8 +13,9 @@ import {
   fetchBinNames,
   fetchBinContents,
   landedDatesForBin,
-  fetchDestinationFace,
+  fetchDestinationCandidates,
   fetchWarehouseId,
+  type DestCandidate,
 } from "@/lib/shiphero/bins-pull";
 import { DEFAULT_BINS_SETTINGS, type BinsSettings, type BinRow } from "@/lib/bins-derive";
 
@@ -81,6 +82,13 @@ export async function getCachedBins(): Promise<{
     landedAt: r.landedAt,
     destFace: r.destFace,
     destQty: r.destQty,
+    destCandidates: (() => {
+      try {
+        return r.destCandidates ? (JSON.parse(r.destCandidates) as BinRow["destCandidates"]) : [];
+      } catch {
+        return [];
+      }
+    })(),
   }));
   let allBins: string[] = [];
   try {
@@ -109,7 +117,7 @@ export interface BinsSyncResult {
  */
 export async function syncBinsCache(
   prefix = "PICK-00",
-  destPrefix = "PICK-01",
+  destPrefix = "PICK-",
   opts: { full?: boolean } = {},
 ): Promise<BinsSyncResult> {
   const settings = await getBinsSettings();
@@ -159,14 +167,18 @@ export async function syncBinsCache(
   const collatable = [...unitsBySku.keys()].filter(
     (sku) => (unitsBySku.get(sku) ?? 0) > settings.collateThreshold || (binsBySku.get(sku)?.size ?? 0) > 1,
   );
-  const destBySku = new Map<string, { face: string; qty: number } | null>();
+  const destBySku = new Map<string, DestCandidate[]>();
   for (const sku of collatable) {
-    const cachedDest = existing.find((r) => r.sku === sku && r.destFace);
-    if (!opts.full && cachedDest?.destFace) {
-      destBySku.set(sku, { face: cachedDest.destFace, qty: cachedDest.destQty ?? 0 });
-      continue;
+    const cachedDest = existing.find((r) => r.sku === sku && r.destCandidates);
+    if (!opts.full && cachedDest?.destCandidates) {
+      try {
+        destBySku.set(sku, JSON.parse(cachedDest.destCandidates) as DestCandidate[]);
+        continue;
+      } catch {
+        /* fall through and re-fetch */
+      }
     }
-    destBySku.set(sku, await fetchDestinationFace(warehouseId, sku, destPrefix));
+    destBySku.set(sku, await fetchDestinationCandidates(warehouseId, sku, destPrefix));
   }
 
   const syncedAt = now();
@@ -174,7 +186,8 @@ export async function syncBinsCache(
     const key = `${item.binName}|${item.sku}`;
     const p = prev.get(key);
     const landed = landedByBin.get(item.binName)?.[item.sku] ?? p?.landedAt ?? null;
-    const dest = destBySku.get(item.sku);
+    const cands = destBySku.get(item.sku);
+    const best = cands?.[0];
     const row = {
       binName: item.binName,
       sku: item.sku,
@@ -182,8 +195,9 @@ export async function syncBinsCache(
       quantity: item.quantity,
       landedAt: landed,
       itemUpdatedAt: item.itemUpdatedAt,
-      destFace: dest ? dest.face : (p?.destFace ?? null),
-      destQty: dest ? dest.qty : (p?.destQty ?? null),
+      destFace: cands ? (best?.face ?? null) : (p?.destFace ?? null),
+      destQty: cands ? (best?.qty ?? null) : (p?.destQty ?? null),
+      destCandidates: cands ? JSON.stringify(cands) : (p?.destCandidates ?? null),
       syncedAt,
     };
     await db

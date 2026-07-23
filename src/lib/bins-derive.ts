@@ -1,6 +1,12 @@
 // Pure, client-safe logic for the Returns Pick Faces page. No DB/server imports,
 // so the component can use it directly on cached rows from the API.
 
+export interface DestCandidate {
+  face: string;
+  qty: number;
+  updatedAt: string | null;
+}
+
 export interface BinRow {
   binName: string;
   sku: string;
@@ -9,6 +15,8 @@ export interface BinRow {
   landedAt: string | null; // honest "in bin since" (from the movement log)
   destFace: string | null;
   destQty: number | null;
+  /** Every pick face this SKU is known to live in, best first. */
+  destCandidates?: DestCandidate[];
 }
 
 export interface BinsSettings {
@@ -88,6 +96,7 @@ export interface ProductRow {
   oldestDays: number | null;
   destFace: string | null;
   destQty: number | null;
+  destCandidates: DestCandidate[];
   /** Enough of one SKU to be worth returning to its pick face. */
   isCollate: boolean;
   /** Same SKU fragmented over 2+ bins — worth consolidating even below threshold. */
@@ -131,6 +140,7 @@ export function productList(rows: BinRow[], s: BinsSettings, now = Date.now()): 
       oldestDays,
       destFace: withDest?.destFace ?? null,
       destQty: withDest?.destQty ?? null,
+      destCandidates: list.find((r) => (r.destCandidates?.length ?? 0) > 0)?.destCandidates ?? [],
       isCollate,
       isSplit: binCount > 1,
       isNear: !isCollate && units >= s.collateThreshold,

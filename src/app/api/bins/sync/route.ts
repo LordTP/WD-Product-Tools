@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   }
   try {
     const body = await req.json().catch(() => ({}));
-    const result = await syncBinsCache("PICK-00", "PICK-01", { full: body.full === true });
+    const result = await syncBinsCache("PICK-00", "PICK-", { full: body.full === true });
     return Response.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof ShipheroError) {

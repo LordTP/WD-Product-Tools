@@ -56,6 +56,12 @@ export function initDb() {
       )`,
     );
     sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bin_cache_bin_sku ON shiphero_bin_cache (bin_name, sku)");
+    // additive for installs created before candidates were stored
+    try {
+      sqlite.exec("ALTER TABLE shiphero_bin_cache ADD COLUMN dest_candidates TEXT");
+    } catch {
+      /* column already exists */
+    }
   } catch (err) {
     console.error("[db] shiphero_bin_cache init failed:", err);
   }
