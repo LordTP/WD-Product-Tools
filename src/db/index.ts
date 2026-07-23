@@ -39,6 +39,26 @@ export function initDb() {
   } catch (err) {
     console.error("[db] app_state init failed:", err);
   }
+  // Returns pick-face (PICK-00) contents cache (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS shiphero_bin_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bin_name TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        product_name TEXT,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        landed_at TEXT,
+        item_updated_at TEXT,
+        dest_face TEXT,
+        dest_qty INTEGER,
+        synced_at TEXT
+      )`,
+    );
+    sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bin_cache_bin_sku ON shiphero_bin_cache (bin_name, sku)");
+  } catch (err) {
+    console.error("[db] shiphero_bin_cache init failed:", err);
+  }
   try {
     const row = sqlite
       .prepare("SELECT COUNT(*) AS n FROM shiphero_vendors")

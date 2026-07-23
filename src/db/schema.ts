@@ -114,3 +114,24 @@ export const appState = sqliteTable("app_state", {
   key: text("key").primaryKey(),
   value: text("value"),
 });
+
+// Cache of what's sitting in the returns pick faces (PICK-00 bins). One row per
+// bin+SKU currently holding stock. `landedAt` is the honest "in bin since" —
+// derived from the inventory movement log (the last time this bin went 0 →
+// positive for this SKU), NOT the item-location row date: a partial pick would
+// reset `updated_at` (hiding stale stock) and `created_at` never resets when a
+// bin is emptied and reused (crying wolf on fresh stock).
+export const shipheroBinCache = sqliteTable("shiphero_bin_cache", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  binName: text("bin_name").notNull(),
+  sku: text("sku").notNull(),
+  productName: text("product_name"),
+  quantity: integer("quantity").notNull().default(0),
+  landedAt: text("landed_at"), // when the stock now in the bin arrived
+  itemUpdatedAt: text("item_updated_at"), // ShipHero's row updated_at — change detection
+  destFace: text("dest_face"), // matching PICK-01 face for this SKU
+  destQty: integer("dest_qty"),
+  syncedAt: text("synced_at"),
+});
+
+export type ShipheroBinCache = typeof shipheroBinCache.$inferSelect;

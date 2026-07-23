@@ -21,6 +21,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
+    group: "Warehouse",
+    items: [{ href: "/returns-pick-faces", label: "Returns Pick Faces", icon: BinIcon }],
+  },
+  {
     group: "Data",
     items: [
       { href: "/vendors", label: "Vendors", icon: VendorIcon },
@@ -161,6 +165,14 @@ function ReturnIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M9 14 4 9l5-5" />
       <path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H8" />
+    </svg>
+  );
+}
+function BinIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 4v16M15 4v16" />
     </svg>
   );
 }
