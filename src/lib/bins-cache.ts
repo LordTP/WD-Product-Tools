@@ -145,11 +145,20 @@ export async function syncBinsCache(
     landedByBin.set(bin, await landedDatesForBin(warehouseId, bin, since));
   }
 
-  // Destination faces only for SKUs over the collate threshold (that's the only
-  // place they're displayed) — keeps the lookup count small.
+  // Destination faces are only shown for SKUs that are actionable — over the
+  // collate threshold OR fragmented across 2+ bins (worth consolidating even
+  // below threshold). Keeps the per-SKU lookup count small.
   const unitsBySku = new Map<string, number>();
-  for (const c of contents) unitsBySku.set(c.sku, (unitsBySku.get(c.sku) ?? 0) + c.quantity);
-  const collatable = [...unitsBySku.entries()].filter(([, u]) => u > settings.collateThreshold).map(([s]) => s);
+  const binsBySku = new Map<string, Set<string>>();
+  for (const c of contents) {
+    unitsBySku.set(c.sku, (unitsBySku.get(c.sku) ?? 0) + c.quantity);
+    const set = binsBySku.get(c.sku) ?? new Set<string>();
+    set.add(c.binName);
+    binsBySku.set(c.sku, set);
+  }
+  const collatable = [...unitsBySku.keys()].filter(
+    (sku) => (unitsBySku.get(sku) ?? 0) > settings.collateThreshold || (binsBySku.get(sku)?.size ?? 0) > 1,
+  );
   const destBySku = new Map<string, { face: string; qty: number } | null>();
   for (const sku of collatable) {
     const cachedDest = existing.find((r) => r.sku === sku && r.destFace);

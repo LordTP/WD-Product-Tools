@@ -78,46 +78,77 @@ export function summariseBins(allBins: string[], rows: BinRow[], s: BinsSettings
   });
 }
 
-export interface CollateRow {
+export interface ProductRow {
   sku: string;
   productName: string;
   units: number;
-  /** Which bins to collect from, most-stock first. */
+  /** Which bins it's in, most-stock first. */
   sources: { binName: string; quantity: number; days: number | null }[];
+  binCount: number;
   oldestDays: number | null;
   destFace: string | null;
   destQty: number | null;
+  /** Enough of one SKU to be worth returning to its pick face. */
+  isCollate: boolean;
+  /** Same SKU fragmented over 2+ bins — worth consolidating even below threshold. */
+  isSplit: boolean;
+  /** Within 1 unit of the collate threshold. */
+  isNear: boolean;
+  /** Has stock sitting past the stale age. */
+  isStale: boolean;
 }
 
-/** SKUs worth consolidating back into their pick face, biggest first. */
-export function collateList(rows: BinRow[], s: BinsSettings, now = Date.now()): CollateRow[] {
+/**
+ * EVERY SKU in the returns bins, biggest first — not just the collatable ones.
+ * With ~120 SKUs mostly sitting as singles, a ">5 of one SKU" rule almost never
+ * fires, so filtering the view down to it leaves an empty screen. Flags let the
+ * UI surface what's actionable without hiding the rest.
+ */
+export function productList(rows: BinRow[], s: BinsSettings, now = Date.now()): ProductRow[] {
   const bySku = new Map<string, BinRow[]>();
   for (const r of rows) {
     const list = bySku.get(r.sku) ?? [];
     list.push(r);
     bySku.set(r.sku, list);
   }
-  const out: CollateRow[] = [];
+  const out: ProductRow[] = [];
   for (const [sku, list] of bySku) {
     const units = list.reduce((a, r) => a + r.quantity, 0);
-    if (units <= s.collateThreshold) continue;
     const sources = list
       .map((r) => ({ binName: r.binName, quantity: r.quantity, days: ageDays(r.landedAt, now) }))
       .sort((a, b) => b.quantity - a.quantity);
     const ages = sources.map((x) => x.days).filter((d): d is number => d !== null);
+    const oldestDays = ages.length ? Math.max(...ages) : null;
     const withDest = list.find((r) => r.destFace);
+    const binCount = new Set(list.map((r) => r.binName)).size;
+    const isCollate = units > s.collateThreshold;
     out.push({
       sku,
       productName: list.find((r) => r.productName)?.productName ?? "",
       units,
       sources,
-      oldestDays: ages.length ? Math.max(...ages) : null,
+      binCount,
+      oldestDays,
       destFace: withDest?.destFace ?? null,
       destQty: withDest?.destQty ?? null,
+      isCollate,
+      isSplit: binCount > 1,
+      isNear: !isCollate && units >= s.collateThreshold,
+      isStale: oldestDays !== null && oldestDays >= s.ageStaleDays,
     });
   }
-  return out.sort((a, b) => b.units - a.units || (b.oldestDays ?? -1) - (a.oldestDays ?? -1));
+  return out.sort(
+    (a, b) =>
+      Number(b.isCollate) - Number(a.isCollate) ||
+      b.units - a.units ||
+      b.binCount - a.binCount ||
+      (b.oldestDays ?? -1) - (a.oldestDays ?? -1),
+  );
 }
+
+/** Just the ones worth a trip right now. */
+export const collateList = (rows: BinRow[], s: BinsSettings, now = Date.now()): ProductRow[] =>
+  productList(rows, s, now).filter((p) => p.isCollate);
 
 export interface BinsStats {
   units: number;
@@ -127,11 +158,14 @@ export interface BinsStats {
   binsOver: number;
   collateSkus: number;
   collateUnits: number;
+  splitSkus: number;
+  staleSkus: number;
   oldestDays: number | null;
   oldestBin: string | null;
 }
 
-export function binsStats(bins: BinSummary[], collate: CollateRow[]): BinsStats {
+export function binsStats(bins: BinSummary[], products: ProductRow[]): BinsStats {
+  const collate = products.filter((p) => p.isCollate);
   const used = bins.filter((b) => b.units > 0);
   let oldestDays: number | null = null;
   let oldestBin: string | null = null;
@@ -149,9 +183,27 @@ export function binsStats(bins: BinSummary[], collate: CollateRow[]): BinsStats 
     binsOver: bins.filter((b) => b.state === "over").length,
     collateSkus: collate.length,
     collateUnits: collate.reduce((a, c) => a + c.units, 0),
+    splitSkus: products.filter((p) => p.isSplit).length,
+    staleSkus: products.filter((p) => p.isStale).length,
     oldestDays,
     oldestBin,
   };
+}
+
+/**
+ * Lay bins out the way the rack is actually numbered: DOWN each column, six
+ * high — bin 1 top-left, bin 6 bottom-left, bin 7 top of the next column.
+ * Returns rows of bins for rendering (row-major DOM, column-major numbering).
+ */
+export function rackGrid<T>(items: T[], rowsPerColumn = 6): (T | null)[][] {
+  const cols = Math.max(1, Math.ceil(items.length / rowsPerColumn));
+  const grid: (T | null)[][] = [];
+  for (let r = 0; r < rowsPerColumn; r++) {
+    const row: (T | null)[] = [];
+    for (let c = 0; c < cols; c++) row.push(items[c * rowsPerColumn + r] ?? null);
+    grid.push(row);
+  }
+  return grid;
 }
 
 /** "PICK-00-01-A-07" -> "A-07" for the compact wall tiles. */
