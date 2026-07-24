@@ -1,6 +1,7 @@
 import { hasShipheroCredential, ShipheroError } from "@/lib/shiphero/client";
 import { getWarehouseId } from "@/lib/bins-cache";
 import { resolveLocationByName, getSkuAtLocation, transferInventory } from "@/lib/shiphero/bins-pull";
+import { CONSOLIDATE_ENABLED } from "@/lib/bins-derive";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,9 @@ interface SourcePlan {
 // source bin (moving that bin's CURRENT quantity — never a stale number), and
 // reports a per-source result.
 export async function POST(req: Request) {
+  if (!CONSOLIDATE_ENABLED) {
+    return Response.json({ error: "Consolidate isn't switched on yet." }, { status: 403 });
+  }
   if (!hasShipheroCredential()) {
     return Response.json({ error: "ShipHero isn't connected." }, { status: 400 });
   }

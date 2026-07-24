@@ -1,6 +1,11 @@
 // Pure, client-safe logic for the Returns Pick Faces page. No DB/server imports,
 // so the component can use it directly on cached rows from the API.
 
+// Master switch for the Consolidate (move stock) feature. OFF until the move
+// path has been tested end-to-end on live stock. Flip to true (both the button
+// and the /api/bins/move route read this) and redeploy to enable it.
+export const CONSOLIDATE_ENABLED: boolean = false;
+
 export interface DestCandidate {
   face: string;
   qty: number;
@@ -221,3 +226,23 @@ export const shortBin = (name: string): string => {
   const m = name.match(/([A-Z]-\d+)$/i);
   return m ? m[1] : name.replace(/^PICK-00-?/i, "");
 };
+
+/** The bay letter of a bin, e.g. "PICK-00-01-A-07" -> "A". */
+export const binBay = (name: string): string => {
+  const m = name.match(/-([A-Za-z]+)-\d+$/);
+  return m ? m[1].toUpperCase() : "?";
+};
+
+/** Group bins into their physical bays (A, B, …), each keeping bin order. */
+export function groupByBay(bins: BinSummary[]): { bay: string; bins: BinSummary[] }[] {
+  const map = new Map<string, BinSummary[]>();
+  for (const b of bins) {
+    const bay = binBay(b.binName);
+    const list = map.get(bay) ?? [];
+    list.push(b);
+    map.set(bay, list);
+  }
+  return [...map.entries()]
+    .map(([bay, bs]) => ({ bay, bins: bs }))
+    .sort((a, b) => a.bay.localeCompare(b.bay));
+}

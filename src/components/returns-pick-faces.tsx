@@ -20,6 +20,8 @@ import {
   ageBand,
   shortBin,
   rackGrid,
+  groupByBay,
+  CONSOLIDATE_ENABLED,
   type BinRow,
   type BinsSettings,
   type BinSummary,
@@ -190,7 +192,7 @@ export function ReturnsPickFaces({
   }
 
   const syncedAgo = lastSyncedAt ? timeAgo(lastSyncedAt) : null;
-  const grid = rackGrid(bins, 6);
+  const bays = groupByBay(bins);
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -372,14 +374,16 @@ export function ReturnsPickFaces({
                       ) : p.isNear ? (
                         <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-500">1 more to collate</span>
                       ) : null}
-                      <button
-                        onClick={() => setMoveProduct(p)}
-                        className="ml-auto text-[11px] px-2 py-1 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium inline-flex items-center gap-1"
-                        title="Consolidate this SKU into a pick face"
-                      >
-                        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                        Consolidate
-                      </button>
+                      {CONSOLIDATE_ENABLED && (
+                        <button
+                          onClick={() => setMoveProduct(p)}
+                          className="ml-auto text-[11px] px-2 py-1 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium inline-flex items-center gap-1"
+                          title="Consolidate this SKU into a pick face"
+                        >
+                          <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                          Consolidate
+                        </button>
+                      )}
                       </div>
                     </td>
                   </tr>
@@ -389,35 +393,50 @@ export function ReturnsPickFaces({
           )
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] h-full">
-            <div className="p-4 overflow-x-auto flex flex-col min-h-0">
-              <div className="flex-1 flex flex-col gap-2 min-w-[820px] min-h-[440px]">
-                {grid.map((row, r) => (
-                  <div key={r} className="flex gap-2 flex-1 items-stretch">
-                    <span className="w-5 shrink-0 flex items-center justify-end pr-0.5 font-mono text-[11px] text-slate-300">{r + 1}</span>
-                    {row.map((b, c) =>
-                      b === null ? (
-                        <div key={c} className="flex-1 min-w-[78px]" />
-                      ) : (
-                        <BinTile
-                          key={b.binName}
-                          bin={b}
-                          settings={settings}
-                          dim={!!q && !binMatches(b)}
-                          selected={selectedBin?.binName === b.binName}
-                          onClick={() => setSelected(b.binName)}
-                        />
-                      ),
-                    )}
+            <div className="p-4 overflow-auto flex flex-col gap-6">
+              {bays.map(({ bay, bins: bayBins }) => {
+                const units = bayBins.reduce((a, b) => a + b.units, 0);
+                const empty = bayBins.filter((b) => b.units === 0).length;
+                const rows = rackGrid(bayBins, 6);
+                return (
+                  <div key={bay} className="w-max">
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="text-xs font-semibold text-slate-700">Bay {bay}</span>
+                      <span className="text-[11px] text-slate-400 tabular-nums">
+                        {bayBins.length} bins · {units} units · {bayBins.length - empty} in use
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {rows.map((row, r) => (
+                        <div key={r} className="flex gap-2 items-stretch">
+                          <span className="w-5 shrink-0 flex items-center justify-end pr-0.5 font-mono text-[11px] text-slate-300">{r + 1}</span>
+                          {row.map((b, c) =>
+                            b === null ? (
+                              <div key={c} className="w-[94px] shrink-0" />
+                            ) : (
+                              <BinTile
+                                key={b.binName}
+                                bin={b}
+                                settings={settings}
+                                dim={!!q && !binMatches(b)}
+                                selected={selectedBin?.binName === b.binName}
+                                onClick={() => setSelected(b.binName)}
+                              />
+                            ),
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-3 mt-3 shrink-0 text-[10px] text-slate-400">
+                );
+              })}
+              <div className="flex flex-wrap gap-3 text-[10px] text-slate-400">
                 <Legend cls="border-dashed border-slate-200 bg-white" label="empty" />
                 <Legend cls="border-slate-200 bg-slate-50" label={`1–${settings.binTarget} units`} />
                 <Legend cls="border-rose-300 bg-rose-50" label={`over ${settings.binTarget}`} />
                 <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{settings.ageWarnDays}–{settings.ageStaleDays - 1}d</span>
                 <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" />{settings.ageStaleDays}d+</span>
-                <span className="ml-auto">numbered down each column — 1 top-left, {shortBin(bins[5]?.binName ?? "A-06")} bottom-left</span>
+                <span className="ml-auto">each bay numbered down its columns — 1 top-left, 6 bottom-left</span>
               </div>
             </div>
 
@@ -509,7 +528,7 @@ function BinTile({
     <button
       onClick={onClick}
       title={title}
-      className={`flex-1 min-w-[78px] h-full border rounded-lg px-2 py-1.5 text-left flex flex-col gap-1 min-h-[62px] relative transition-opacity ${tone} ${
+      className={`w-[94px] shrink-0 border rounded-lg px-2 py-1.5 text-left flex flex-col gap-1 min-h-[66px] relative transition-opacity ${tone} ${
         selected ? "ring-2 ring-indigo-400 border-indigo-400" : "hover:border-indigo-300"
       } ${dim ? "opacity-25" : ""}`}
     >
