@@ -214,6 +214,87 @@ export async function fetchDestinationCandidates(
   );
 }
 
+// ---------- consolidation move (write) ----------
+
+export interface ResolvedLocation {
+  id: string;
+  name: string;
+  pickable: boolean;
+}
+
+/** Resolve a location by its exact name → id + pickable. null if it doesn't exist. */
+export async function resolveLocationByName(
+  warehouseId: string,
+  name: string,
+): Promise<ResolvedLocation | null> {
+  const query = `
+    query {
+      locations(warehouse_id: "${q1(warehouseId)}", name: "${q1(name)}") {
+        data(first: 5) { edges { node { id name pickable } } }
+      }
+    }
+  `;
+  const { data } = await shipheroGraphql<{
+    locations?: { data?: { edges?: Edge<{ id?: string; name?: string; pickable?: boolean }>[] } };
+  }>(query);
+  const exact = nodesOf(data.locations?.data).find((n) => n.name === name && n.id);
+  if (!exact) return null;
+  return { id: exact.id!, name: exact.name!, pickable: Boolean(exact.pickable) };
+}
+
+/** Live quantity of a SKU in a named location + that location's id. Reads fresh. */
+export async function getSkuAtLocation(
+  warehouseId: string,
+  sku: string,
+  locationName: string,
+): Promise<{ locationId: string; quantity: number } | null> {
+  const query = `
+    query {
+      item_locations(warehouse_id: "${q1(warehouseId)}", sku: "${q1(sku)}", location_name: "${q1(locationName)}") {
+        data(first: 5) { edges { node { quantity location { id name } } } }
+      }
+    }
+  `;
+  const { data } = await shipheroGraphql<{
+    item_locations?: {
+      data?: { edges?: Edge<{ quantity?: number; location?: { id?: string; name?: string } | null }>[] };
+    };
+  }>(query);
+  const row = nodesOf(data.item_locations?.data).find((n) => n.location?.name === locationName && n.location?.id);
+  if (!row) return null;
+  return { locationId: row.location!.id!, quantity: Number(row.quantity ?? 0) };
+}
+
+/** Atomically move `quantity` of `sku` from one location to another. */
+export async function transferInventory(input: {
+  warehouseId: string;
+  sku: string;
+  quantity: number;
+  fromId: string;
+  toId: string;
+  reason?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const reason = input.reason ?? "Returns consolidation · Product App";
+  const mutation = `
+    mutation {
+      inventory_transfer(data: {
+        warehouse_id: "${q1(input.warehouseId)}"
+        sku: "${q1(input.sku)}"
+        quantity: ${Math.trunc(input.quantity)}
+        location_from_id: "${q1(input.fromId)}"
+        location_to_id: "${q1(input.toId)}"
+        reason: "${q1(reason)}"
+      }) { ok }
+    }
+  `;
+  try {
+    const { data } = await shipheroGraphql<{ inventory_transfer?: { ok?: boolean } }>(mutation);
+    return { ok: Boolean(data.inventory_transfer?.ok) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "transfer failed" };
+  }
+}
+
 /** The account's warehouse id (base64 global id). */
 export async function fetchWarehouseId(): Promise<string | null> {
   const { data } = await shipheroGraphql<{

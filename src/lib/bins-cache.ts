@@ -36,6 +36,17 @@ async function setState(key: string, value: string): Promise<void> {
   await db.insert(appState).values({ key, value }).onConflictDoUpdate({ target: appState.key, set: { value } });
 }
 
+/** Warehouse id (base64), cached in app_state; resolved from ShipHero on first need. */
+export async function getWarehouseId(): Promise<string> {
+  let warehouseId = await getState(KEY_WAREHOUSE);
+  if (!warehouseId) {
+    warehouseId = await fetchWarehouseId();
+    if (!warehouseId) throw new Error("Couldn't resolve the ShipHero warehouse id.");
+    await setState(KEY_WAREHOUSE, warehouseId);
+  }
+  return warehouseId;
+}
+
 // ---------- settings ----------
 
 export async function getBinsSettings(): Promise<BinsSettings> {

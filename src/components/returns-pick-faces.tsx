@@ -69,6 +69,7 @@ export function ReturnsPickFaces({
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [openDest, setOpenDest] = useState<string | null>(null);
+  const [moveProduct, setMoveProduct] = useState<ProductRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -363,15 +364,23 @@ export function ReturnsPickFaces({
                       <span className={`px-1.5 py-0.5 rounded text-xs font-medium tabular-nums ${AGE_CLASS[ageBand(p.oldestDays, settings)]}`}>{ageLabel(p.oldestDays)}</span>
                     </td>
                     <td className="px-4 py-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
                       {p.isCollate ? (
                         <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700">Collate</span>
                       ) : p.isSplit ? (
                         <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">Split · {p.binCount} bins</span>
                       ) : p.isNear ? (
                         <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-500">1 more to collate</span>
-                      ) : (
-                        <span className="text-[11px] text-slate-300">—</span>
-                      )}
+                      ) : null}
+                      <button
+                        onClick={() => setMoveProduct(p)}
+                        className="ml-auto text-[11px] px-2 py-1 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium inline-flex items-center gap-1"
+                        title="Consolidate this SKU into a pick face"
+                      >
+                        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                        Consolidate
+                      </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -457,6 +466,16 @@ export function ReturnsPickFaces({
       {showSettings && (
         <SettingsModal settings={settings} onClose={() => setShowSettings(false)} onSaved={(s) => { setSettings(s); setShowSettings(false); }} />
       )}
+      {moveProduct && (
+        <ConsolidateModal
+          product={moveProduct}
+          onClose={() => setMoveProduct(null)}
+          onMoved={async () => {
+            setMoveProduct(null);
+            await sync(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -519,6 +538,220 @@ function BinTile({
         <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${band === "stale" ? "bg-rose-500" : "bg-amber-500"}`} />
       )}
     </button>
+  );
+}
+
+interface MovePreview {
+  dest: { face: string; currentQty: number; willBe: number };
+  sources: { binName: string; liveQty: number; movable: boolean }[];
+  totalMove: number;
+  warnings: string[];
+}
+interface MoveResult {
+  ok: boolean;
+  dest: { face: string; qtyAfter: number };
+  movedTotal: number;
+  results: { binName: string; moved: number; ok: boolean; error?: string }[];
+}
+
+function ConsolidateModal({
+  product,
+  onClose,
+  onMoved,
+}: {
+  product: ProductRow;
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const candidates = product.destCandidates.filter((c) => !c.face.toUpperCase().startsWith("PICK-00"));
+  const [checked, setChecked] = useState<Set<string>>(new Set(product.sources.map((s) => s.binName)));
+  const [destFace, setDestFace] = useState(candidates[0]?.face ?? "");
+  const [phase, setPhase] = useState<"collect" | "preview" | "done">("collect");
+  const [preview, setPreview] = useState<MovePreview | null>(null);
+  const [result, setResult] = useState<MoveResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const binNames = product.sources.map((s) => s.binName).filter((b) => checked.has(b));
+  const toggle = (bin: string) =>
+    setChecked((s) => {
+      const n = new Set(s);
+      if (n.has(bin)) n.delete(bin);
+      else n.add(bin);
+      return n;
+    });
+
+  async function call(confirm: boolean) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/bins/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: product.sku, binNames, destFace: destFace.trim(), confirm }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Something went wrong.");
+      if (confirm) {
+        setResult(data as MoveResult);
+        setPhase("done");
+      } else {
+        setPreview(data as MovePreview);
+        setPhase("preview");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[88vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-slate-200">
+          <p className="text-sm font-semibold text-slate-900">Consolidate stock</p>
+          <p className="text-[13px] text-slate-600 mt-0.5">{product.productName || product.sku}</p>
+          <p className="font-mono text-[11px] text-slate-400">{product.sku}</p>
+        </div>
+
+        <div className="flex-1 overflow-auto p-5 thin-scroll">
+          {phase === "collect" && (
+            <>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Collect from — tick each bin as you pick it</p>
+              <div className="flex flex-col gap-2">
+                {product.sources.map((s) => (
+                  <label
+                    key={s.binName}
+                    className={`flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer ${checked.has(s.binName) ? "border-indigo-300 bg-indigo-50/50" : "border-slate-200"}`}
+                  >
+                    <input type="checkbox" checked={checked.has(s.binName)} onChange={() => toggle(s.binName)} className="w-4 h-4" />
+                    <span className="font-mono text-xs text-slate-700 flex-1">{s.binName}</span>
+                    <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 tabular-nums">{s.quantity}</span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="text-[11px] uppercase tracking-wide text-slate-400 mt-4 mb-2">Consolidate into</p>
+              {candidates.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {candidates.map((c) => (
+                    <button
+                      key={c.face}
+                      onClick={() => setDestFace(c.face)}
+                      className={`font-mono text-[11px] px-2 py-1 rounded border ${destFace === c.face ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                      title={c.qty > 0 ? `holds ${c.qty} now` : "empty face"}
+                    >
+                      {c.face}
+                      {c.qty > 0 && <span className={destFace === c.face ? "text-indigo-100" : "text-slate-400"}> · {c.qty}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                value={destFace}
+                onChange={(e) => setDestFace(e.target.value)}
+                placeholder="or type a pick face, e.g. PICK-03-12-D-01"
+                className="w-full px-2.5 py-2 border border-slate-200 rounded text-sm font-mono focus:ring-1 focus:ring-indigo-300 outline-none"
+              />
+              <p className="text-[11px] text-slate-400 mt-1.5">Must be an existing pickable face — not a PICK-00 returns bin.</p>
+            </>
+          )}
+
+          {phase === "preview" && preview && (
+            <>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">Review — nothing has moved yet</p>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {preview.sources.map((s) => (
+                  <div key={s.binName} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="font-mono text-xs text-slate-600">{s.binName}</span>
+                    <span className={`tabular-nums ${s.movable ? "text-slate-700" : "text-rose-500"}`}>{s.movable ? `move ${s.liveQty}` : "empty — skip"}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-center gap-3 my-3 text-sm">
+                <span className="font-semibold tabular-nums text-slate-900">{preview.totalMove} units</span>
+                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-slate-400"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                <span className="font-mono text-sm font-semibold text-emerald-700">{preview.dest.face}</span>
+              </div>
+              <p className="text-center text-[12px] text-slate-500">
+                {preview.dest.face} holds <span className="tabular-nums">{preview.dest.currentQty}</span> → will be <span className="tabular-nums font-semibold text-slate-800">{preview.dest.willBe}</span>
+              </p>
+              {preview.warnings.length > 0 && (
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[12px] text-amber-800">
+                  {preview.warnings.map((w, i) => (
+                    <p key={i}>⚠ {w}</p>
+                  ))}
+                </div>
+              )}
+              {preview.totalMove === 0 && (
+                <p className="mt-3 text-center text-sm text-rose-600">Nothing left to move — these bins have all been picked since.</p>
+              )}
+            </>
+          )}
+
+          {phase === "done" && result && (
+            <>
+              <p className={`text-sm font-semibold mb-3 ${result.ok ? "text-emerald-700" : "text-amber-700"}`}>
+                {result.ok ? "✓ Moved" : "Partly moved — check the failures"}
+              </p>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {result.results.map((r) => (
+                  <div key={r.binName} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="font-mono text-xs text-slate-600">{r.binName}</span>
+                    {r.ok ? (
+                      <span className="text-emerald-700 tabular-nums">✓ moved {r.moved}</span>
+                    ) : (
+                      <span className="text-rose-600 text-xs" title={r.error}>✕ {r.error ?? "failed"}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-center text-[12px] text-slate-500 mt-3">
+                {result.dest.face} now holds <span className="tabular-nums font-semibold text-slate-800">{result.dest.qtyAfter}</span>
+              </p>
+            </>
+          )}
+
+          {error && <p className="text-xs text-rose-600 mt-3 bg-rose-50 border border-rose-200 rounded p-2">{error}</p>}
+        </div>
+
+        <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          {phase === "collect" && (
+            <>
+              <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={() => call(false)}
+                disabled={loading || binNames.length === 0 || !destFace.trim()}
+                className="text-xs px-4 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
+              >
+                {loading ? "Checking…" : "Preview move"}
+              </button>
+            </>
+          )}
+          {phase === "preview" && (
+            <>
+              <button onClick={() => setPhase("collect")} disabled={loading} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Back</button>
+              <button
+                onClick={() => call(true)}
+                disabled={loading || (preview?.totalMove ?? 0) === 0}
+                className="text-xs px-4 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+              >
+                {loading ? "Moving…" : `Confirm & move ${preview?.totalMove ?? 0}`}
+              </button>
+            </>
+          )}
+          {phase === "done" && (
+            <button
+              onClick={() => (result && result.movedTotal > 0 ? onMoved() : onClose())}
+              className="text-xs px-4 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800"
+            >
+              Done
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
