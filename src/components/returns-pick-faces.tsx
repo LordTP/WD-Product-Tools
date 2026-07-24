@@ -10,7 +10,7 @@
 //  · Bin wall — the rack as it's actually numbered: DOWN each column, six high
 //    (bin 1 top-left, bin 6 bottom-left, bin 7 top of the next column).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import {
   summariseBins,
@@ -193,6 +193,9 @@ export function ReturnsPickFaces({
 
   const syncedAgo = lastSyncedAt ? timeAgo(lastSyncedAt) : null;
   const bays = groupByBay(bins);
+  // Share one column count (the widest bay) so tile size is consistent across
+  // bays and the widest bay fills the width instead of leaving a right gap.
+  const maxCols = Math.max(1, ...bays.map((b) => Math.ceil(b.bins.length / 6)));
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -399,21 +402,23 @@ export function ReturnsPickFaces({
                 const empty = bayBins.filter((b) => b.units === 0).length;
                 const rows = rackGrid(bayBins, 6);
                 return (
-                  <div key={bay} className="w-max">
+                  <div key={bay} className="min-w-[640px]">
                     <div className="flex items-baseline gap-2 mb-2">
                       <span className="text-xs font-semibold text-slate-700">Bay {bay}</span>
                       <span className="text-[11px] text-slate-400 tabular-nums">
                         {bayBins.length} bins · {units} units · {bayBins.length - empty} in use
                       </span>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    <div
+                      className="grid gap-2 items-stretch"
+                      style={{ gridTemplateColumns: `1.25rem repeat(${maxCols}, minmax(72px, 1fr))` }}
+                    >
                       {rows.map((row, r) => (
-                        <div key={r} className="flex gap-2 items-stretch">
-                          <span className="w-5 shrink-0 flex items-center justify-end pr-0.5 font-mono text-[11px] text-slate-300">{r + 1}</span>
-                          {row.map((b, c) =>
-                            b === null ? (
-                              <div key={c} className="w-[94px] shrink-0" />
-                            ) : (
+                        <Fragment key={r}>
+                          <span className="flex items-center justify-end pr-0.5 font-mono text-[11px] text-slate-300">{r + 1}</span>
+                          {Array.from({ length: maxCols }).map((_, c) => {
+                            const b = row[c] ?? null;
+                            return b ? (
                               <BinTile
                                 key={b.binName}
                                 bin={b}
@@ -422,9 +427,11 @@ export function ReturnsPickFaces({
                                 selected={selectedBin?.binName === b.binName}
                                 onClick={() => setSelected(b.binName)}
                               />
-                            ),
-                          )}
-                        </div>
+                            ) : (
+                              <div key={c} />
+                            );
+                          })}
+                        </Fragment>
                       ))}
                     </div>
                   </div>
@@ -528,7 +535,7 @@ function BinTile({
     <button
       onClick={onClick}
       title={title}
-      className={`w-[94px] shrink-0 border rounded-lg px-2 py-1.5 text-left flex flex-col gap-1 min-h-[66px] relative transition-opacity ${tone} ${
+      className={`w-full border rounded-lg px-2 py-1.5 text-left flex flex-col gap-1 min-h-[66px] relative transition-opacity ${tone} ${
         selected ? "ring-2 ring-indigo-400 border-indigo-400" : "hover:border-indigo-300"
       } ${dim ? "opacity-25" : ""}`}
     >
