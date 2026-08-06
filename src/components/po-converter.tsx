@@ -797,7 +797,7 @@ function Dropzone({
       <header className="h-14 bg-white border-b border-slate-200 flex items-center px-5 shrink-0">
         <span className="font-semibold text-sm text-slate-900">PO → ShipHero</span>
         <span className="ml-3 text-xs text-slate-400">
-          Convert a purchase-order sheet into ShipHero&apos;s bulk-upload CSV
+          Convert a purchase-order sheet and push it straight to ShipHero
         </span>
       </header>
       <div className="flex-1 flex items-center justify-center p-8">

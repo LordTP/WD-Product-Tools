@@ -23,7 +23,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Warehouse",
-    items: [{ href: "/returns-pick-faces", label: "Returns Pick Faces", icon: BinIcon }],
+    items: [
+      { href: "/operations", label: "Operations", icon: OpsIcon },
+      { href: "/returns-pick-faces", label: "Returns Pick Faces", icon: BinIcon },
+      { href: "/cycle-counts", label: "Cycle Counts", icon: CountIcon },
+    ],
   },
   {
     group: "Data",
@@ -167,6 +171,22 @@ function BinIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M3 10h18M9 4v16M15 4v16" />
+    </svg>
+  );
+}
+function OpsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M3 3v18h18" />
+      <path d="M7 15l3-4 3 3 4-6" />
+    </svg>
+  );
+}
+function CountIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>
   );
 }

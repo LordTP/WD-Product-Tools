@@ -65,6 +65,35 @@ export function initDb() {
   } catch (err) {
     console.error("[db] shiphero_bin_cache init failed:", err);
   }
+  // Log of cycle counts created from this app (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS cycle_count_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shiphero_id TEXT NOT NULL UNIQUE,
+        legacy_id TEXT,
+        name TEXT NOT NULL,
+        count_type TEXT,
+        items TEXT NOT NULL,
+        sku_count INTEGER NOT NULL DEFAULT 0,
+        max_qty INTEGER,
+        due_date TEXT,
+        status TEXT,
+        queue_status TEXT,
+        progress INTEGER,
+        counted INTEGER,
+        uncounted INTEGER,
+        skus_total INTEGER,
+        skus_counted INTEGER,
+        sh_started_at TEXT,
+        sh_ended_at TEXT,
+        created_at TEXT NOT NULL,
+        synced_at TEXT
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] cycle_count_log init failed:", err);
+  }
   try {
     const row = sqlite
       .prepare("SELECT COUNT(*) AS n FROM shiphero_vendors")

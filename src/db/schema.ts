@@ -136,3 +136,35 @@ export const shipheroBinCache = sqliteTable("shiphero_bin_cache", {
 });
 
 export type ShipheroBinCache = typeof shipheroBinCache.$inferSelect;
+
+// Light log of the cycle counts WE create from this app — the ONLY thing stored
+// (no product catalog is ever cached; the low-stock report is pulled live from a
+// ShipHero inventory snapshot each run). One row per submitted count so the
+// history view can show "ours only" and refresh live status on demand, like POs.
+// `items` is the SKU list we submitted (with the snapshot on_hand + location at
+// submission time), since ShipHero's API exposes no per-SKU count result.
+export const cycleCountLog = sqliteTable("cycle_count_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipheroId: text("shiphero_id").notNull().unique(), // CycleCountBatch id (global)
+  legacyId: text("legacy_id"),
+  name: text("name").notNull(),
+  countType: text("count_type"),
+  items: text("items").notNull(), // JSON LowStockItem[] we submitted
+  skuCount: integer("sku_count").notNull().default(0),
+  maxQty: integer("max_qty"), // the "≤ N" threshold this count was built from
+  dueDate: text("due_date"),
+  // cached live status from ShipHero, refreshed on demand
+  status: text("status"),
+  queueStatus: text("queue_status"),
+  progress: integer("progress"),
+  counted: integer("counted"),
+  uncounted: integer("uncounted"),
+  skusTotal: integer("skus_total"),
+  skusCounted: integer("skus_counted"),
+  shStartedAt: text("sh_started_at"),
+  shEndedAt: text("sh_ended_at"),
+  createdAt: text("created_at").notNull(),
+  syncedAt: text("synced_at"),
+});
+
+export type CycleCountLog = typeof cycleCountLog.$inferSelect;
