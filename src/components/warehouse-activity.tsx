@@ -15,7 +15,7 @@ import {
   type WarehouseDay,
 } from "@/lib/warehouse-types";
 
-const TYPES: EventType[] = ["received", "putaway", "replenish", "consolidation", "return-slotted", "pick", "move", "adjust"];
+const TYPES: EventType[] = ["received", "putaway", "replenish", "consolidation", "return-slotted", "picked", "shipped", "to-qc", "qc-release", "pick-reorg", "move", "adjust"];
 const AV_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6"];
 
 function timeAgo(iso: string | null | undefined): string {
@@ -146,10 +146,11 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
         ) : (
           <>
             {/* KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
               <Kpi rail="#059669" label="Received" value={kfmt(s.receivedUnits)} sub={`units · ${s.receivedPOs.length} PO${s.receivedPOs.length === 1 ? "" : "s"}`} />
               <Kpi rail="#0d9488" label="Put away" value={kfmt(s.putAwayUnits)} sub="from receiving" />
-              <Kpi rail="#4f46e5" label="Shipped" value={String(s.shippedOrders)} sub={`orders · ${s.shippedUnits} units`} />
+              <Kpi rail="#7c3aed" label="Picked" value={kfmt(s.pickedItems)} sub="into totes" />
+              <Kpi rail="#4338ca" label="Shipped" value={String(s.shippedOrders)} sub={`orders · ${s.shippedUnits} units`} />
               <Kpi rail="#d97706" label="Stock moved" value={kfmt(s.movedUnits)} sub={`${s.moveCount} moves`} />
               <Kpi rail="#0284c7" label="Returns slotted" value={kfmt(s.returnsUnits)} sub="into returns bins" />
               <Kpi rail="#6366f1" label="Staff active" value={String(s.staffActive)} sub="on the floor" />
@@ -190,7 +191,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
             {/* who did what */}
             <Panel title="Who did what" desc="Actions per person, split by activity — click a name to filter the feed">
               <div className="overflow-x-auto -mx-1 px-1">
-                <table className="w-full text-xs min-w-[36rem]">
+                <table className="w-full text-xs min-w-[42rem]">
                   <thead>
                     <tr className="text-[9.5px] uppercase tracking-wide text-slate-400 text-left">
                       <th className="font-medium pb-2">Person</th>
@@ -198,6 +199,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                       <th className="font-medium pb-2 text-right">Put away</th>
                       <th className="font-medium pb-2 text-right">Moved</th>
                       <th className="font-medium pb-2 text-right">Picked</th>
+                      <th className="font-medium pb-2 text-right">Shipped</th>
                       <th className="font-medium pb-2 text-right">Total</th>
                       <th className="font-medium pb-2 pl-3">Share</th>
                     </tr>
@@ -219,6 +221,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.putAway || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.moved || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.picked || "—"}</td>
+                        <td className="py-2 text-right tabular-nums text-slate-500">{p.shipped || "—"}</td>
                         <td className="py-2 text-right tabular-nums font-bold text-slate-800">{p.total}</td>
                         <td className="py-2 pl-3">
                           <span className="inline-block w-28 h-[5px] bg-slate-100 rounded-full overflow-hidden align-middle">
@@ -290,7 +293,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                           <td className="py-1.5 text-slate-600">{e.user}</td>
                           <td className="py-1.5 font-mono text-[11px] text-slate-500">{e.sku}</td>
                           <td className={`py-1.5 text-right tabular-nums font-bold ${e.qty >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{e.qty >= 0 ? "+" : ""}{e.qty}</td>
-                          <td className="py-1.5 text-slate-500">{e.fromBin ? area(e.fromBin) : "?"} → {e.toBin ? area(e.toBin) : e.type === "pick" ? "shipped" : "?"}</td>
+                          <td className="py-1.5 text-slate-500">{e.toBin === "SHIPPED" ? "→ shipped" : `${e.fromBin ? area(e.fromBin) : "?"} → ${e.toBin ? area(e.toBin) : "?"}`}</td>
                           <td className="py-1.5"><span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: meta.color + "1a", color: meta.color }}>{meta.label}</span></td>
                         </tr>
                       );

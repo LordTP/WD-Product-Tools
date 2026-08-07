@@ -9,7 +9,11 @@ export type EventType =
   | "replenish"
   | "consolidation"
   | "return-slotted"
-  | "pick"
+  | "picked"
+  | "shipped"
+  | "to-qc"
+  | "qc-release"
+  | "pick-reorg"
   | "move"
   | "adjust";
 
@@ -22,6 +26,7 @@ export interface WarehouseEvent {
   toBin: string | null;
   reason: string;
   type: EventType;
+  meta?: string; // e.g. PO number on a received event
 }
 
 export interface Counted {
@@ -38,6 +43,7 @@ export interface PersonRow {
   putAway: number;
   moved: number;
   picked: number;
+  shipped: number;
 }
 
 export interface Flow {
@@ -54,6 +60,7 @@ export interface WarehouseSummary {
   receivedUnits: number;
   receivedPOs: { po: string; vendor: string; units: number }[];
   putAwayUnits: number;
+  pickedItems: number;
   shippedOrders: number;
   shippedUnits: number;
   shippedByService: Counted[];
@@ -75,15 +82,16 @@ export interface WarehouseDay {
 export function area(bin: string | null | undefined): string {
   const n = (bin || "").toUpperCase();
   if (!n) return "?";
-  if (n.startsWith("BULK")) return "BULK";
+  if (n === "PO") return "PO";
+  if (n.includes("TOTE")) return "TOTE";
+  if (n === "SHIPPED") return "SHIPPED";
+  if (n.startsWith("BULK") || n.startsWith("STORE")) return "STORAGE";
   if (n.startsWith("PICK-00")) return "RETURN BIN";
   if (n.startsWith("PICK")) return "PICK FACE";
   if (n.startsWith("RET")) return "RETURNS";
-  if (n.startsWith("STORE")) return "STORE";
   if (n.includes("RECEIV")) return "RECEIVING";
-  if (n.includes("AQL")) return "AQL/QC";
+  if (n.includes("AQL")) return "QC";
   if (n.includes("QC FAIL")) return "QC FAIL";
-  if (n.includes("TRANSFER")) return "TRANSFER";
   return "OTHER";
 }
 
@@ -91,11 +99,15 @@ export const TYPE_META: Record<EventType, { label: string; color: string }> = {
   received: { label: "Received", color: "#059669" },
   putaway: { label: "Put away", color: "#0d9488" },
   replenish: { label: "Replenishment", color: "#4f46e5" },
-  consolidation: { label: "Bulk consolidation", color: "#d97706" },
-  "return-slotted": { label: "Returns → bins", color: "#0284c7" },
-  pick: { label: "Order picks / ship", color: "#7c3aed" },
-  move: { label: "Other moves", color: "#64748b" },
-  adjust: { label: "Adjustments", color: "#e11d48" },
+  consolidation: { label: "Consolidation (to storage)", color: "#d97706" },
+  "return-slotted": { label: "Returns slotted", color: "#0284c7" },
+  picked: { label: "Picked (into tote)", color: "#7c3aed" },
+  shipped: { label: "Shipped", color: "#4338ca" },
+  "to-qc": { label: "Sent to QC", color: "#db2777" },
+  "qc-release": { label: "QC released", color: "#0891b2" },
+  "pick-reorg": { label: "Pick-face reorg", color: "#65a30d" },
+  move: { label: "Other move", color: "#64748b" },
+  adjust: { label: "Adjustment", color: "#e11d48" },
 };
 
 export function initialsOf(name: string): string {
