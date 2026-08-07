@@ -94,6 +94,18 @@ export function initDb() {
   } catch (err) {
     console.error("[db] cycle_count_log init failed:", err);
   }
+  // Warehouse activity day-cache (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS warehouse_day_cache (
+        date TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] warehouse_day_cache init failed:", err);
+  }
   try {
     const row = sqlite
       .prepare("SELECT COUNT(*) AS n FROM shiphero_vendors")

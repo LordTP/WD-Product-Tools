@@ -168,3 +168,15 @@ export const cycleCountLog = sqliteTable("cycle_count_log", {
 });
 
 export type CycleCountLog = typeof cycleCountLog.$inferSelect;
+
+// One row per DATE of warehouse activity (Operations page). A day is pulled from
+// ShipHero once, stored here as a JSON payload (summary + events), then served +
+// filtered locally — so the page never re-parses ShipHero on every view. Past
+// days are immutable (kept forever); "today" is re-generated on demand.
+export const warehouseDayCache = sqliteTable("warehouse_day_cache", {
+  date: text("date").primaryKey(), // YYYY-MM-DD (warehouse local)
+  payload: text("payload").notNull(), // JSON WarehouseDay { summary, events }
+  generatedAt: text("generated_at").notNull(),
+});
+
+export type WarehouseDayCache = typeof warehouseDayCache.$inferSelect;
