@@ -14,6 +14,8 @@
 
 import { shipheroGraphql } from "./client";
 import { getWarehouseId } from "./warehouse";
+import { getCachedSummaries } from "@/lib/po-cache";
+import { listAliases } from "@/lib/vendors";
 import { serviceLabel } from "@/lib/ops-types";
 import {
   area,
@@ -202,7 +204,30 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
     }
   }
 
+  // Enrich received POs with product name + vendor from the PO cache, and keep
+  // only mapped-supplier POs (same filter as PO History / the Dashboard) — the
+  // unmapped ones are junk we don't want on here. Keep the Received KPI + type
+  // breakdown consistent with the filtered panel.
+  const { pos: cachedPOs } = await getCachedSummaries();
+  const aliases = await listAliases();
+  const mappedVendors = new Set(aliases.map((a) => (a.name || "").toLowerCase()));
+  const normPo = (s: string) => (s || "").replace(/\s+/g, "").toUpperCase();
+  const cacheByPo = new Map(cachedPOs.map((p) => [normPo(p.poNumber), p]));
+  const receivedList = [...receivedPOs.entries()]
+    .map(([po, units]) => {
+      const c = cacheByPo.get(normPo(po));
+      const vendor = c?.vendorName ?? "";
+      return { po, units, vendor, product: c?.products?.[0] ?? "", mapped: Boolean(vendor && mappedVendors.has(vendor.toLowerCase())) };
+    })
+    .filter((x) => x.mapped)
+    .map(({ po, units, vendor, product }) => ({ po, units, vendor, product }))
+    .sort((a, b) => b.units - a.units);
+  const mappedReceivedUnits = receivedList.reduce((a, x) => a + x.units, 0);
+  receivedUnits = mappedReceivedUnits;
+  unitsByType.set("received", mappedReceivedUnits);
+
   const byType: Counted[] = [...unitsByType.entries()]
+    .filter(([, units]) => units > 0)
     .map(([t, units]) => ({ key: TYPE_META[t].label, units }))
     .sort((a, b) => b.units - a.units);
   const flows: Flow[] = [...flowMap.entries()]
@@ -215,7 +240,7 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       generatedAt: new Date().toISOString(),
       eventCount: raw.length,
       receivedUnits,
-      receivedPOs: [...receivedPOs.entries()].map(([po, units]) => ({ po, vendor: "", units })).sort((a, b) => b.units - a.units),
+      receivedPOs: receivedList,
       putAwayUnits,
       pickedItems,
       shippedOrders,

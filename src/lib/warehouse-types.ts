@@ -59,7 +59,7 @@ export interface WarehouseSummary {
   generatedAt: string;
   eventCount: number;
   receivedUnits: number;
-  receivedPOs: { po: string; vendor: string; units: number }[];
+  receivedPOs: { po: string; vendor: string; product: string; units: number }[];
   putAwayUnits: number;
   pickedItems: number;
   shippedOrders: number;

@@ -251,11 +251,12 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                   </div>
                 ))}
               </Panel>
-              <Panel title="Received today" desc="POs booked in">
-                {s.receivedPOs.length === 0 ? <Empty text="No PO received this day." /> : s.receivedPOs.map((p) => (
-                  <div key={p.po} className="flex items-center gap-2 text-xs py-1.5">
-                    <span className="font-mono text-[11px] text-slate-600">{p.po}</span>
-                    <span className="ml-auto font-bold tabular-nums text-slate-800">{p.units}u</span>
+              <Panel title="Received today" desc="POs booked in (mapped suppliers only)">
+                {s.receivedPOs.length === 0 ? <Empty text="No mapped PO received this day." /> : s.receivedPOs.map((p) => (
+                  <div key={p.po} className="flex items-center gap-2 text-xs py-1.5 border-t border-slate-50 first:border-t-0">
+                    <span className="font-mono text-[10.5px] text-slate-400 shrink-0 w-14">{p.po}</span>
+                    <span className="text-slate-700 truncate">{p.product || p.vendor || "—"}</span>
+                    <span className="ml-auto font-bold tabular-nums text-slate-800 shrink-0">{p.units}u</span>
                   </div>
                 ))}
               </Panel>
