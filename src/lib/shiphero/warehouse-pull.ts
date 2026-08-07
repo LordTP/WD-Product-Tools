@@ -131,7 +131,7 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
   const pget = (u: string) => {
     const name = uname(u);
     let p = person.get(name);
-    if (!p) { p = { name, initials: initialsOf(name), total: 0, received: 0, putAway: 0, moved: 0, picked: 0, shipped: 0 }; person.set(name, p); }
+    if (!p) { p = { name, initials: initialsOf(name), total: 0, received: 0, putAway: 0, moved: 0, returns: 0, picked: 0, shipped: 0 }; person.set(name, p); }
     return p;
   };
 
@@ -173,7 +173,9 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       const type = moveType(area(fromBin), area(toBin));
       events.push({ at: both.at, user: uname(both.user), sku: both.sku, qty: Math.abs(both.chg), fromBin, toBin, reason: both.reason, type });
       const p = pget(both.user); p.total++;
-      if (type === "putaway") p.putAway++; else p.moved++;
+      if (type === "putaway") p.putAway++;
+      else if (type === "return-slotted") p.returns++;
+      else p.moved++;
     }
   }
 

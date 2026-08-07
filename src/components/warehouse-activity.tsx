@@ -192,13 +192,14 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
             {/* who did what */}
             <Panel title="Who did what" desc="Actions per person, split by activity — click a name to filter the feed">
               <div className="overflow-x-auto -mx-1 px-1">
-                <table className="w-full text-xs min-w-[42rem]">
+                <table className="w-full text-xs min-w-[48rem]">
                   <thead>
                     <tr className="text-[9.5px] uppercase tracking-wide text-slate-400 text-left">
                       <th className="font-medium pb-2">Person</th>
                       <th className="font-medium pb-2 text-right">Received</th>
                       <th className="font-medium pb-2 text-right">Put away</th>
                       <th className="font-medium pb-2 text-right">Moved</th>
+                      <th className="font-medium pb-2 text-right">Returns</th>
                       <th className="font-medium pb-2 text-right">Picked</th>
                       <th className="font-medium pb-2 text-right">Shipped</th>
                       <th className="font-medium pb-2 text-right">Total</th>
@@ -221,6 +222,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.received || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.putAway || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.moved || "—"}</td>
+                        <td className="py-2 text-right tabular-nums text-slate-500">{p.returns || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.picked || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.shipped || "—"}</td>
                         <td className="py-2 text-right tabular-nums font-bold text-slate-800">{p.total}</td>

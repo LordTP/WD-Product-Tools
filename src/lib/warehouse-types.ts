@@ -42,6 +42,7 @@ export interface PersonRow {
   received: number;
   putAway: number;
   moved: number;
+  returns: number;
   picked: number;
   shipped: number;
 }
