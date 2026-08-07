@@ -30,7 +30,8 @@ function timeAgo(iso: string | null | undefined): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.round(h / 24)}d ago`;
 }
-const kfmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+const kfmt = (n: number) => { const v = Number(n) || 0; return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v); };
+const metaOf = (t: string) => (TYPE_META as Record<string, { label: string; color: string }>)[t] ?? { label: t || "Other", color: "#64748b" };
 
 export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: boolean }) {
   const [date, setDate] = useState(ymd());
@@ -286,7 +287,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                   </thead>
                   <tbody>
                     {events.slice(0, 300).map((e, i) => {
-                      const meta = TYPE_META[e.type];
+                      const meta = metaOf(e.type);
                       return (
                         <tr key={i} className="border-t border-slate-100">
                           <td className="py-1.5 text-slate-400 tabular-nums whitespace-nowrap">{timeHM(e.at)}</td>
