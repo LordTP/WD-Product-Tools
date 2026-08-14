@@ -180,3 +180,19 @@ export const warehouseDayCache = sqliteTable("warehouse_day_cache", {
 });
 
 export type WarehouseDayCache = typeof warehouseDayCache.$inferSelect;
+
+// One row per ShipHero return (Swap RMA) for the Returns page. Rows are upserted
+// on Sync; completed returns freeze, still-pending v2 returns keep refreshing
+// until they complete. `isV2` marks Swap v2 RMAs (processed in ShipHero) vs the
+// pre-cutover v1 legacy set which will stay pending forever.
+export const returnsCache = sqliteTable("returns_cache", {
+  id: text("id").primaryKey(), // ShipHero return uuid
+  legacyId: integer("legacy_id"),
+  createdAt: text("created_at").notNull(),
+  status: text("status").notNull(),
+  isV2: integer("is_v2").notNull().default(0),
+  payload: text("payload").notNull(), // JSON ReturnRow
+  syncedAt: text("synced_at"),
+});
+
+export type ReturnsCache = typeof returnsCache.$inferSelect;

@@ -106,6 +106,23 @@ export function initDb() {
   } catch (err) {
     console.error("[db] warehouse_day_cache init failed:", err);
   }
+  // Returns (Swap RMA) cache (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS returns_cache (
+        id TEXT PRIMARY KEY,
+        legacy_id INTEGER,
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        is_v2 INTEGER NOT NULL DEFAULT 0,
+        payload TEXT NOT NULL,
+        synced_at TEXT
+      )`,
+    );
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_returns_cache_created ON returns_cache (created_at)");
+  } catch (err) {
+    console.error("[db] returns_cache init failed:", err);
+  }
   try {
     const row = sqlite
       .prepare("SELECT COUNT(*) AS n FROM shiphero_vendors")
