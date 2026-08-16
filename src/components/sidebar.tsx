@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type NavItem = { href: string; label: string; icon: (p: { className?: string }) => React.ReactElement; soon?: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: (p: { className?: string }) => React.ReactElement;
+  soon?: boolean;
+  /** Indented sub-item of the entry above it. */
+  sub?: boolean;
+};
 const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Overview",
@@ -16,6 +23,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Tools",
     items: [
       { href: "/purchase-orders", label: "Purchase Orders", icon: PoIcon },
+      { href: "/history", label: "PO History", icon: HistoryIcon, sub: true },
       // Hidden for now — Swap QC returns export not ready for the team yet.
       // { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/products", label: "Products → Shopify", icon: ProductIcon },
@@ -35,7 +43,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Data",
     items: [
       { href: "/vendors", label: "Vendors", icon: VendorIcon },
-      { href: "/history", label: "PO History", icon: HistoryIcon },
       { href: "/sizes", label: "Size Map", icon: SizeIcon },
     ],
   },
@@ -78,7 +85,9 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   href={item.soon ? "#" : item.href}
                   onClick={onNavigate}
                   aria-disabled={item.soon}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm mb-0.5 transition-colors ${
+                  className={`flex items-center gap-2.5 py-2 rounded-md text-sm mb-0.5 transition-colors ${
+                    item.sub ? "pl-8 pr-3" : "px-3"
+                  } ${
                     active
                       ? "bg-indigo-50 text-indigo-700 font-medium"
                       : item.soon
@@ -86,7 +95,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                         : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className={`${item.sub ? "w-3.5 h-3.5" : "w-4 h-4"} shrink-0`} />
                   <span className="truncate">{item.label}</span>
                   {item.soon && (
                     <span className="ml-auto text-[9px] uppercase tracking-wide text-slate-300">
