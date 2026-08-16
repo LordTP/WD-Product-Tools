@@ -49,11 +49,18 @@ export interface PersonStats {
   name: string;
   initials: string;
   returnsTouched: number;
+  returnIds: string[]; // for click-to-filter the feed
   actions: number;
   activeHours: number; // distinct clock-hours with ≥1 event in the window
   perHour: number; // actions / activeHours
   byHour: number[]; // 24 buckets, event counts (tempo strip)
   byDay: Record<string, number>; // YYYY-MM-DD → actions (league table)
+}
+
+export interface TrendDay {
+  day: string; // YYYY-MM-DD
+  opened: number;
+  processed: number;
 }
 
 export interface ReturnsSummary {
@@ -74,6 +81,7 @@ export interface ReturnsSummary {
   pipeline: { bucket: string; count: number }[]; // ALL open returns by age (window-independent)
   topProducts: Counted[];
   people: PersonStats[];
+  trend: TrendDay[]; // per-day opened vs processed across the window
 }
 
 export function initialsOf(name: string): string {
@@ -116,6 +124,8 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
   const turnarounds: number[] = [];
   const pipeline = { "0–7 days": 0, "7–14 days": 0, "14+ days": 0 };
   const people = new Map<string, { returns: Set<string>; events: { at: string }[] }>();
+  const openedByDay = new Map<string, number>();
+  const processedByDay = new Map<string, number>();
 
   for (const r of rows) {
     const openedInWindow = inWindow(r.createdAt);
@@ -123,6 +133,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
     if (openedInWindow) {
       total++;
       unitsExpected += r.expected;
+      openedByDay.set(r.createdAt.slice(0, 10), (openedByDay.get(r.createdAt.slice(0, 10)) ?? 0) + 1);
       if (r.exchangeOrders.length) exchanges++;
       if (isOpen(r)) {
         valueOpen += r.items.reduce((a, it) => a + Math.max(0, it.quantity - it.received) * it.price, 0);
@@ -151,6 +162,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       unitsRestocked += r.restocked;
       valueProcessed += r.items.reduce((a, it) => a + it.received * it.price, 0);
       turnarounds.push((new Date(firstReceive.at).getTime() - new Date(r.createdAt).getTime()) / 86_400_000);
+      processedByDay.set(firstReceive.at.slice(0, 10), (processedByDay.get(firstReceive.at.slice(0, 10)) ?? 0) + 1);
     }
     for (const h of r.history) {
       if (!h.user || !inWindow(h.at)) continue;
@@ -180,6 +192,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
         name,
         initials: initialsOf(name),
         returnsTouched: p.returns.size,
+        returnIds: [...p.returns],
         actions: p.events.length,
         activeHours,
         perHour: activeHours ? p.events.length / activeHours : 0,
@@ -188,6 +201,21 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       };
     })
     .sort((a, b) => b.actions - a.actions);
+
+  // Daily trend across the window (clamped to today; opened + processed merged).
+  const trend: TrendDay[] = [];
+  {
+    const start = new Date(`${from.slice(0, 10)}T00:00:00`);
+    const endStr = to.slice(0, 10) < nowIso.slice(0, 10) ? to.slice(0, 10) : nowIso.slice(0, 10);
+    for (let d = new Date(start); ; d.setDate(d.getDate() + 1)) {
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      const day = `${d.getFullYear()}-${mo}-${da}`;
+      if (day > endStr) break;
+      trend.push({ day, opened: openedByDay.get(day) ?? 0, processed: processedByDay.get(day) ?? 0 });
+      if (trend.length > 370) break; // safety on absurd custom ranges
+    }
+  }
 
   const sortCounted = (m: Map<string, number>): Counted[] =>
     [...m.entries()].map(([key, units]) => ({ key, units })).sort((a, b) => b.units - a.units);
@@ -214,6 +242,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
     pipeline: Object.entries(pipeline).map(([bucket, count]) => ({ bucket, count })),
     topProducts: sortCounted(products).slice(0, 8),
     people: personStats,
+    trend,
   };
 }
 

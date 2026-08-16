@@ -50,6 +50,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
   const [reasonFilter, setReasonFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [personFilter, setPersonFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -113,9 +114,18 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
     [baseRows, fromIso, toIso],
   );
 
+  const personReturnIds = useMemo(() => {
+    if (!personFilter) return null;
+    const p = summary.people.find((x) => x.name === personFilter);
+    return p ? new Set(p.returnIds) : null;
+  }, [personFilter, summary.people]);
+
+  // Person filter looks across ALL rows (their processed returns may have been
+  // opened before the window); other filters apply to window rows.
   const feedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return windowRows.filter((r) => {
+    const source = personReturnIds ? baseRows.filter((r) => personReturnIds.has(r.id)) : windowRows;
+    return source.filter((r) => {
       if (statusFilter === "open" && !isOpen(r)) return false;
       if (statusFilter === "complete" && isOpen(r)) return false;
       if (reasonFilter !== "all") {
@@ -128,7 +138,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
       }
       return true;
     });
-  }, [windowRows, statusFilter, reasonFilter, search]);
+  }, [windowRows, baseRows, personReturnIds, statusFilter, reasonFilter, search]);
 
   const maxReason = summary.reasons[0]?.units ?? 1;
   const maxProduct = summary.topProducts[0]?.units ?? 1;
@@ -387,7 +397,14 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                     {summary.people.map((p) => {
                       const maxHour = Math.max(...p.byHour, 1);
                       return (
-                        <tr key={p.name} className="border-b border-slate-100 last:border-0">
+                        <tr
+                          key={p.name}
+                          onClick={() => setPersonFilter(personFilter === p.name ? null : p.name)}
+                          title="Click to filter the feed to this person's returns"
+                          className={`border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 ${
+                            personFilter === p.name ? "bg-indigo-50/60" : ""
+                          }`}
+                        >
                           <td className="py-2 pr-3 whitespace-nowrap">
                             <span className="inline-flex w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-semibold items-center justify-center mr-2 align-middle">
                               {p.initials}
@@ -428,11 +445,54 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             )}
           </Panel>
 
+          {/* Daily trend */}
+          <Panel title="Daily trend" note="opened vs processed per day">
+            <div className="flex gap-4 text-xs text-slate-500 mb-3">
+              <span><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: "#4f46e5" }} />Opened</span>
+              <span><span className="inline-block w-2 h-2 rounded-sm mr-1.5 align-middle" style={{ background: "#0d9488" }} />Processed</span>
+            </div>
+            {(() => {
+              const max = Math.max(...summary.trend.map((t) => Math.max(t.opened, t.processed)), 1);
+              return (
+                <div className="flex items-end gap-[3px] h-24 overflow-x-auto pb-1">
+                  {summary.trend.map((t) => (
+                    <div
+                      key={t.day}
+                      className="flex items-end gap-[1px] shrink-0"
+                      title={`${dayLabel(t.day + "T00:00:00")} · opened ${t.opened} · processed ${t.processed}`}
+                    >
+                      <span
+                        className="w-[6px] rounded-t-[1px]"
+                        style={{ height: `${Math.max(2, (t.opened / max) * 100)}%`, background: "#4f46e5" }}
+                      />
+                      <span
+                        className="w-[6px] rounded-t-[1px]"
+                        style={{ height: `${Math.max(2, (t.processed / max) * 100)}%`, background: t.processed ? "#0d9488" : "#e2e8f0" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            <p className="text-[11px] text-slate-400 mt-1">
+              When the teal bars keep pace with the indigo ones, the desk is keeping up with what customers are sending back.
+            </p>
+          </Panel>
+
           {/* Feed */}
           <Panel
             title={`Returns · ${feedRows.length}`}
             right={
               <div className="flex items-center gap-2">
+                {personFilter && (
+                  <button
+                    onClick={() => setPersonFilter(null)}
+                    className="text-xs px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium"
+                    title="Showing only returns this person worked — click to clear"
+                  >
+                    {personFilter} ✕
+                  </button>
+                )}
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
@@ -547,6 +607,8 @@ function Empty() {
 function StatusPill({ r }: { r: ReturnRow }) {
   if (!r.isV2)
     return <span className="text-[11px] font-medium rounded-full px-2 py-0.5 bg-slate-100 text-slate-400">v1 legacy</span>;
+  if (/damag|fault/i.test(r.status))
+    return <span className="text-[11px] font-medium rounded-full px-2 py-0.5 bg-rose-100 text-rose-700">{r.status}</span>;
   if (isOpen(r))
     return <span className="text-[11px] font-medium rounded-full px-2 py-0.5 bg-amber-100 text-amber-800">pending</span>;
   return <span className="text-[11px] font-medium rounded-full px-2 py-0.5 bg-emerald-100 text-emerald-800">{r.status}</span>;
