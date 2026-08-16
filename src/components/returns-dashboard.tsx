@@ -21,14 +21,20 @@ interface SyncMeta {
   windowFrom: string;
 }
 
-type Period = 7 | 14 | 30 | 90;
+type Period = { kind: "today" } | { kind: "days"; days: 7 | 14 | 30 | 90 } | { kind: "custom" };
 
-const PERIODS: { days: Period; label: string }[] = [
-  { days: 7, label: "7 days" },
-  { days: 14, label: "14 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
+const DAY_CHIPS: Array<{ days: 7 | 14 | 30 | 90; label: string }> = [
+  { days: 7, label: "7d" },
+  { days: 14, label: "14d" },
+  { days: 30, label: "30d" },
+  { days: 90, label: "90d" },
 ];
+
+function localYmd(d: Date): string {
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mo}-${da}`;
+}
 
 export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boolean }) {
   const [rows, setRows] = useState<ReturnRow[]>([]);
@@ -36,7 +42,9 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>(30);
+  const [period, setPeriod] = useState<Period>({ kind: "days", days: 30 });
+  const [customFrom, setCustomFrom] = useState<string>(localYmd(new Date(Date.now() - 7 * 86_400_000)));
+  const [customTo, setCustomTo] = useState<string>(localYmd(new Date()));
   const [hideLegacy, setHideLegacy] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [reasonFilter, setReasonFilter] = useState<string>("all");
@@ -79,17 +87,30 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
 
   const legacyCount = useMemo(() => rows.filter((r) => !r.isV2).length, [rows]);
 
-  // Window + legacy filter feed everything (KPIs, panels, feed).
-  const windowRows = useMemo(() => {
-    const cutoff = Date.now() - period * 86_400_000;
-    return rows.filter(
-      (r) => new Date(r.createdAt).getTime() >= cutoff && (!hideLegacy || r.isV2),
-    );
-  }, [rows, period, hideLegacy]);
+  // Window bounds as local-naive ISO strings (ShipHero timestamps are naive too).
+  const [fromIso, toIso] = useMemo((): [string, string] => {
+    if (period.kind === "today") return [`${localYmd(new Date())}T00:00:00`, "9999-12-31T23:59:59"];
+    if (period.kind === "custom") {
+      const f = customFrom || localYmd(new Date());
+      const t = customTo || localYmd(new Date());
+      return [`${f}T00:00:00`, `${t}T23:59:59`];
+    }
+    const from = new Date(Date.now() - period.days * 86_400_000);
+    return [`${localYmd(from)}T00:00:00`, "9999-12-31T23:59:59"];
+  }, [period, customFrom, customTo]);
+
+  const baseRows = useMemo(() => rows.filter((r) => !hideLegacy || r.isV2), [rows, hideLegacy]);
+
+  // Feed shows returns OPENED in the window; summary handles its own windowing
+  // (opened metrics by createdAt, processing metrics by event time).
+  const windowRows = useMemo(
+    () => baseRows.filter((r) => r.createdAt >= fromIso && r.createdAt <= toIso),
+    [baseRows, fromIso, toIso],
+  );
 
   const summary: ReturnsSummary = useMemo(
-    () => deriveSummary(windowRows, new Date().toISOString()),
-    [windowRows],
+    () => deriveSummary(baseRows, fromIso, toIso, new Date().toISOString()),
+    [baseRows, fromIso, toIso],
   );
 
   const feedRows = useMemo(() => {
@@ -120,12 +141,22 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
       {/* Header bar */}
       <div className="h-14 shrink-0 border-b border-slate-200 bg-white flex items-center gap-2 px-4 lg:px-6">
         <h1 className="text-[15px] font-semibold text-slate-900 mr-2">Returns</h1>
-        {PERIODS.map((p) => (
+        <button
+          onClick={() => setPeriod({ kind: "today" })}
+          className={`text-xs px-2.5 py-1 rounded-md border ${
+            period.kind === "today"
+              ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-medium"
+              : "border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          Today
+        </button>
+        {DAY_CHIPS.map((p) => (
           <button
             key={p.days}
-            onClick={() => setPeriod(p.days)}
+            onClick={() => setPeriod({ kind: "days", days: p.days })}
             className={`text-xs px-2.5 py-1 rounded-md border ${
-              period === p.days
+              period.kind === "days" && period.days === p.days
                 ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-medium"
                 : "border-slate-200 text-slate-500 hover:bg-slate-50"
             }`}
@@ -133,6 +164,36 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             {p.label}
           </button>
         ))}
+        <button
+          onClick={() => setPeriod({ kind: "custom" })}
+          className={`text-xs px-2.5 py-1 rounded-md border ${
+            period.kind === "custom"
+              ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-medium"
+              : "border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          Custom
+        </button>
+        {period.kind === "custom" && (
+          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+            <input
+              type="date"
+              value={customFrom}
+              max={customTo}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="border border-slate-200 rounded-md px-2 py-[3px] bg-white text-slate-700"
+            />
+            →
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={localYmd(new Date())}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="border border-slate-200 rounded-md px-2 py-[3px] bg-white text-slate-700"
+            />
+          </span>
+        )}
         <button
           onClick={() => setHideLegacy((v) => !v)}
           title="Swap v1-era RMAs are never processed in ShipHero — hidden by default"
@@ -180,13 +241,21 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
           {/* KPI row */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
             <Kpi v={String(summary.total)} label="Returns opened" sub={`${summary.unitsExpected} units expected`} />
-            <Kpi v={String(summary.unitsReceived)} label="Units received" sub="at the returns desk" />
+            <Kpi
+              v={String(summary.processedReturns)}
+              label="Returns processed"
+              sub={`${summary.unitsReceived} units received`}
+            />
             <Kpi
               v={summary.unitsReceived ? `${Math.round(summary.restockRate * 100)}%` : "—"}
               label="Restock rate"
               sub={`${summary.unitsRestocked} restocked`}
             />
-            <Kpi v={fmtMoney(summary.value)} label="Value returned" sub="retail value of goods" />
+            <Kpi
+              v={fmtMoney(summary.valueProcessed)}
+              label="Value processed"
+              sub={`${fmtMoney(summary.valueOpen)} still coming back`}
+            />
             <Kpi
               v={summary.avgTurnaroundDays != null ? `${summary.avgTurnaroundDays.toFixed(1)}d` : "—"}
               label="Avg turnaround"
@@ -249,7 +318,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                   </span>
                 ))}
               </div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Open returns by age</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Open returns by age — all open right now, any window</p>
               {summary.pipeline.map((p, i) => (
                 <div key={p.bucket} className="grid grid-cols-[90px_1fr_36px] gap-2.5 items-center mb-2 text-xs">
                   <span className="text-slate-500">{p.bucket}</span>
@@ -294,7 +363,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
           {/* Processing */}
           <Panel
             title="Processing"
-            note="from the RMA trail — rate = actions ÷ hours with at least one action"
+            note="work done IN this window (whenever the return was opened) — rate = actions ÷ hours with at least one action"
           >
             {summary.people.length === 0 ? (
               <p className="text-sm text-slate-400 py-3">

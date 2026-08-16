@@ -59,16 +59,19 @@ export interface PersonStats {
 export interface ReturnsSummary {
   total: number;
   unitsExpected: number;
+  /** Processed in the window (by EVENT time, not return-creation time). */
+  processedReturns: number;
   unitsReceived: number;
   unitsRestocked: number;
   restockRate: number; // restocked / received
-  value: number;
+  valueProcessed: number; // retail value of goods received in window
+  valueOpen: number; // retail value still in the post (open returns opened in window)
   exchanges: number;
   faulty: number;
-  avgTurnaroundDays: number | null; // created → first receive-ish event
+  avgTurnaroundDays: number | null; // created → first receive-ish event (event in window)
   reasons: Counted[];
   outcomes: Counted[]; // Exchange vs Refund/credit (Swap doesn't split credit)
-  pipeline: { bucket: string; count: number }[]; // open returns by age
+  pipeline: { bucket: string; count: number }[]; // ALL open returns by age (window-independent)
   topProducts: Counted[];
   people: PersonStats[];
 }
@@ -91,9 +94,23 @@ function productKey(name: string): string {
   return name.replace(/\s+(XXS|XS|S|M|L|XL|UK \d+|ONE SIZE)$/i, "").trim();
 }
 
-export function deriveSummary(rows: ReturnRow[], nowIso: string): ReturnsSummary {
+/**
+ * Derive the page summary.
+ * - `rows` is the FULL (legacy-filtered) set, not pre-windowed.
+ * - "Opened" metrics (counts, reasons, products, value coming back) use the
+ *   return's createdAt inside [fromIso, toIso].
+ * - Processing metrics (people, units received, turnaround, value processed)
+ *   use EVENT timestamps inside the window — so work done this week on a
+ *   return opened last month still counts this week.
+ * - Pipeline (open by age) is window-independent: all open returns right now.
+ */
+export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string, nowIso: string): ReturnsSummary {
   const now = new Date(nowIso).getTime();
-  let unitsExpected = 0, unitsReceived = 0, unitsRestocked = 0, value = 0, exchanges = 0, faulty = 0;
+  const from = fromIso, to = toIso; // ISO strings compare lexicographically
+  const inWindow = (at: string) => at >= from && at <= to;
+
+  let total = 0, unitsExpected = 0, exchanges = 0, faulty = 0, valueOpen = 0;
+  let processedReturns = 0, unitsReceived = 0, unitsRestocked = 0, valueProcessed = 0;
   const reasons = new Map<string, number>();
   const products = new Map<string, number>();
   const turnarounds: number[] = [];
@@ -101,29 +118,42 @@ export function deriveSummary(rows: ReturnRow[], nowIso: string): ReturnsSummary
   const people = new Map<string, { returns: Set<string>; events: { at: string }[] }>();
 
   for (const r of rows) {
-    unitsExpected += r.expected;
-    unitsReceived += r.received;
-    unitsRestocked += r.restocked;
-    value += r.value;
-    if (r.exchangeOrders.length) exchanges++;
-    for (const it of r.items) {
-      const reason = (it.reason || r.reason || "Other").trim() || "Other";
-      reasons.set(reason, (reasons.get(reason) ?? 0) + it.quantity);
-      if (/fault|damag/i.test(reason) || /damag/i.test(it.condition || "")) faulty += it.quantity;
-      products.set(productKey(it.productName || it.sku), (products.get(productKey(it.productName || it.sku)) ?? 0) + it.quantity);
+    const openedInWindow = inWindow(r.createdAt);
+
+    if (openedInWindow) {
+      total++;
+      unitsExpected += r.expected;
+      if (r.exchangeOrders.length) exchanges++;
+      if (isOpen(r)) {
+        valueOpen += r.items.reduce((a, it) => a + Math.max(0, it.quantity - it.received) * it.price, 0);
+      }
+      for (const it of r.items) {
+        const reason = (it.reason || r.reason || "Other").trim() || "Other";
+        reasons.set(reason, (reasons.get(reason) ?? 0) + it.quantity);
+        if (/fault|damag/i.test(reason) || /damag/i.test(it.condition || "")) faulty += it.quantity;
+        products.set(productKey(it.productName || it.sku), (products.get(productKey(it.productName || it.sku)) ?? 0) + it.quantity);
+      }
     }
+
+    // Pipeline: every open return, whenever it was opened.
     if (isOpen(r)) {
       const ageDays = (now - new Date(r.createdAt).getTime()) / 86_400_000;
       if (ageDays <= 7) pipeline["0–7 days"]++;
       else if (ageDays <= 14) pipeline["7–14 days"]++;
       else pipeline["14+ days"]++;
     }
-    const firstReceive = r.history.find((h) => h.user && RECEIVE_RE.test(h.body));
-    if (firstReceive) {
+
+    // Processing: keyed off event time.
+    const firstReceive = r.history.find((h) => RECEIVE_RE.test(h.body));
+    if (firstReceive && inWindow(firstReceive.at)) {
+      processedReturns++;
+      unitsReceived += r.received;
+      unitsRestocked += r.restocked;
+      valueProcessed += r.items.reduce((a, it) => a + it.received * it.price, 0);
       turnarounds.push((new Date(firstReceive.at).getTime() - new Date(r.createdAt).getTime()) / 86_400_000);
     }
     for (const h of r.history) {
-      if (!h.user) continue;
+      if (!h.user || !inWindow(h.at)) continue;
       // Swap's integration user generates RMAs — that's automation, not a person.
       if (/swap|shiphero api|integration/i.test(h.user) || /by swap/i.test(h.body)) continue;
       const p = people.get(h.user) ?? { returns: new Set<string>(), events: [] };
@@ -162,14 +192,15 @@ export function deriveSummary(rows: ReturnRow[], nowIso: string): ReturnsSummary
   const sortCounted = (m: Map<string, number>): Counted[] =>
     [...m.entries()].map(([key, units]) => ({ key, units })).sort((a, b) => b.units - a.units);
 
-  const received = unitsReceived;
   return {
-    total: rows.length,
+    total,
     unitsExpected,
+    processedReturns,
     unitsReceived,
     unitsRestocked,
-    restockRate: received > 0 ? unitsRestocked / received : 0,
-    value,
+    restockRate: unitsReceived > 0 ? unitsRestocked / unitsReceived : 0,
+    valueProcessed,
+    valueOpen,
     exchanges,
     faulty,
     avgTurnaroundDays: turnarounds.length
@@ -177,7 +208,7 @@ export function deriveSummary(rows: ReturnRow[], nowIso: string): ReturnsSummary
       : null,
     reasons: sortCounted(reasons),
     outcomes: [
-      { key: "Refund / credit", units: rows.length - exchanges },
+      { key: "Refund / credit", units: total - exchanges },
       { key: "Exchange", units: exchanges },
     ],
     pipeline: Object.entries(pipeline).map(([bucket, count]) => ({ bucket, count })),
