@@ -120,6 +120,21 @@ export function initDb() {
   } catch (err) {
     console.error("[db] po_dates init failed:", err);
   }
+  // PO date revision log (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS po_date_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        po_number TEXT NOT NULL,
+        field TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        changed_at TEXT NOT NULL
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] po_date_log init failed:", err);
+  }
   // Returns (Swap RMA) cache (idempotent; not in a migration).
   try {
     sqlite.exec(

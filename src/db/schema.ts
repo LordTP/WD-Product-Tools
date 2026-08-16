@@ -210,3 +210,16 @@ export const poDates = sqliteTable("po_dates", {
 });
 
 export type PoDates = typeof poDates.$inferSelect;
+
+// Audit log of PO date revisions made through the app (bulk amend / future
+// single edits). Powers "how many times has this supplier slipped" reporting.
+export const poDateLog = sqliteTable("po_date_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  poNumber: text("po_number").notNull(),
+  field: text("field").notNull(), // orderSent | exFactory | delivery
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  changedAt: text("changed_at").notNull(),
+});
+
+export type PoDateLog = typeof poDateLog.$inferSelect;

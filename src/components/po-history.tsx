@@ -4,7 +4,14 @@ import { useEffect, useState, useCallback } from "react";
 import Papa from "papaparse";
 import type { PoSummary, PoDetail, PoLineDetail } from "@/lib/shiphero/po-pull";
 import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
+import { normalizeSheetDate, ukDate } from "@/lib/shiphero/dates";
 import { ColumnFilter, BLANK_SENTINEL } from "@/components/column-filter";
+
+interface PoDatesRow {
+  orderSent: string | null;
+  exFactory: string | null;
+  delivery: string | null;
+}
 
 // Column definitions for the Excel-style header filters.
 const COLUMNS: { id: string; label: string; get: (p: PoSummary) => string }[] = [
@@ -86,6 +93,15 @@ export function PoHistory({
   const [details, setDetails] = useState<Record<string, PoDetail | "loading" | { error: string }>>({});
   const [exportChooser, setExportChooser] = useState(false);
   const [exportingLines, setExportingLines] = useState(false);
+  // Bulk date amend (Flossie's supplier-slip workflow).
+  const [datesByPo, setDatesByPo] = useState<Record<string, PoDatesRow>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDelivery, setBulkDelivery] = useState("");
+  const [bulkExFactory, setBulkExFactory] = useState("");
+  const [bulkShift, setBulkShift] = useState("14");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
 
   // Reads the LOCAL CACHE — instant, no API credits.
   const load = useCallback(async () => {
@@ -96,6 +112,7 @@ export function PoHistory({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load.");
       setPos(data.pos);
+      setDatesByPo(data.dates ?? {});
       setLastSyncedAt(data.lastSyncedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load.");
@@ -173,6 +190,44 @@ export function PoHistory({
     );
     setOpenPo((prev) => (prev && prev.poNumber === detail.poNumber ? { ...prev, status: detail.status, poDate: detail.poDate } : prev));
   }, []);
+
+  // ---- bulk date amend ----
+  async function applyBulk(
+    changes: Array<{ poNumber: string; delivery?: string; exFactory?: string; orderSent?: string }>,
+  ) {
+    if (!changes.length) return;
+    setBulkApplying(true);
+    setBulkMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/po/bulk-dates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Bulk update failed.");
+      setBulkMsg(
+        `${data.applied} PO${data.applied === 1 ? "" : "s"} updated${
+          data.failed?.length ? ` · ${data.failed.length} failed` : ""
+        }`,
+      );
+      if (data.failed?.length) {
+        setError(
+          `Failed: ${data.failed
+            .map((f: { poNumber: string; error?: string }) => `${f.poNumber} (${f.error ?? "?"})`)
+            .join("; ")}`,
+        );
+      }
+      setSelected(new Set());
+      setPasteOpen(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bulk update failed.");
+    } finally {
+      setBulkApplying(false);
+    }
+  }
 
   // Does a row pass the column filters? Optionally ignore one column (used when
   // computing that column's distinct list — Excel narrows by the OTHER filters).
@@ -326,6 +381,17 @@ export function PoHistory({
           </span>
         )}
         <button
+          onClick={() => setPasteOpen(true)}
+          title="Paste a supplier's revised dates sheet (PO number + dates) and apply in bulk"
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5"
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <rect x="8" y="2" width="8" height="4" rx="1" />
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 13h6M9 17h4" />
+          </svg>
+          Amend dates
+        </button>
+        <button
           onClick={() => setExportChooser(true)}
           disabled={filtered.length === 0}
           title="Download the current view as CSV (Excel)"
@@ -394,13 +460,114 @@ export function PoHistory({
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="px-5 py-2 bg-indigo-50/70 border-b border-indigo-100 flex items-center gap-3 flex-wrap text-xs">
+          <span className="font-semibold text-indigo-800">{selected.size} selected</span>
+          <span className="flex items-center gap-1.5 text-slate-600">
+            Set delivery
+            <input
+              type="date"
+              value={bulkDelivery}
+              onChange={(e) => setBulkDelivery(e.target.value)}
+              className="border border-slate-200 rounded px-1.5 py-0.5 bg-white"
+            />
+            <button
+              disabled={!bulkDelivery || bulkApplying}
+              onClick={() => applyBulk([...selected].map((poNumber) => ({ poNumber, delivery: bulkDelivery })))}
+              className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
+            >
+              Apply
+            </button>
+          </span>
+          <span className="text-slate-300">·</span>
+          <span className="flex items-center gap-1.5 text-slate-600" title="Moves each PO's current delivery date by this many days (keeps their relative spread)">
+            Shift
+            <input
+              type="number"
+              value={bulkShift}
+              onChange={(e) => setBulkShift(e.target.value)}
+              className="border border-slate-200 rounded px-1.5 py-0.5 w-14 bg-white"
+            />
+            days
+            <button
+              disabled={!Number(bulkShift) || bulkApplying}
+              onClick={() => {
+                const n = Number(bulkShift);
+                const changes = [...selected]
+                  .map((poNumber) => {
+                    const base =
+                      datesByPo[poNumber]?.delivery ??
+                      pos?.find((p) => p.poNumber === poNumber)?.poDate?.slice(0, 10);
+                    if (!base) return null;
+                    const d = new Date(`${base}T00:00:00`);
+                    d.setDate(d.getDate() + n);
+                    const pad = (x: number) => String(x).padStart(2, "0");
+                    return { poNumber, delivery: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` };
+                  })
+                  .filter((c): c is { poNumber: string; delivery: string } => c !== null);
+                applyBulk(changes);
+              }}
+              className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
+            >
+              Apply
+            </button>
+          </span>
+          <span className="text-slate-300">·</span>
+          <span className="flex items-center gap-1.5 text-slate-600">
+            Set ex-factory
+            <input
+              type="date"
+              value={bulkExFactory}
+              onChange={(e) => setBulkExFactory(e.target.value)}
+              className="border border-slate-200 rounded px-1.5 py-0.5 bg-white"
+            />
+            <button
+              disabled={!bulkExFactory || bulkApplying}
+              onClick={() => applyBulk([...selected].map((poNumber) => ({ poNumber, exFactory: bulkExFactory })))}
+              className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
+            >
+              Apply
+            </button>
+          </span>
+          {bulkApplying && <span className="text-indigo-600 font-medium">Applying…</span>}
+          {bulkMsg && !bulkApplying && <span className="text-emerald-700 font-medium">{bulkMsg}</span>}
+          <span className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setPasteOpen(true)}
+              className="px-2 py-0.5 rounded border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-100"
+            >
+              Paste revisions…
+            </button>
+            <button onClick={() => setSelected(new Set())} className="text-slate-500 hover:text-slate-700">
+              Clear
+            </button>
+          </span>
+        </div>
+      )}
+
       {error && <div className="px-5 py-2 text-xs bg-rose-50 border-b border-rose-200 text-rose-700">{error}</div>}
 
       <div className="flex-1 min-h-0 overflow-auto bg-white thin-scroll">
         <table className="w-full text-sm border-collapse">
           <thead className="sticky top-0 bg-slate-100 z-10">
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
-              <th className="font-medium px-4 py-2 border-b border-slate-200 w-8"></th>
+              <th className="font-medium px-4 py-2 border-b border-slate-200 w-8">
+                <input
+                  type="checkbox"
+                  title="Select all visible"
+                  checked={filtered.length > 0 && filtered.every((p) => selected.has(p.poNumber))}
+                  onChange={(e) => {
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      for (const p of filtered) {
+                        if (e.target.checked) next.add(p.poNumber);
+                        else next.delete(p.poNumber);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+              </th>
               {COLUMNS.map((c) => (
                 <th
                   key={c.id}
@@ -423,7 +590,22 @@ export function PoHistory({
           </thead>
           <tbody>
             {filtered.map((po, i) => (
-              <PoRow key={po.poNumber + i} po={po} zebra={i % 2 === 1} onOpen={() => openDetail(po)} />
+              <PoRow
+                key={po.poNumber + i}
+                po={po}
+                zebra={i % 2 === 1}
+                onOpen={() => openDetail(po)}
+                checked={selected.has(po.poNumber)}
+                onToggle={() =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(po.poNumber)) next.delete(po.poNumber);
+                    else next.add(po.poNumber);
+                    return next;
+                  })
+                }
+                exFactory={datesByPo[po.poNumber]?.exFactory ?? null}
+              />
             ))}
             {pos && filtered.length === 0 && !loading && (
               <tr>
@@ -448,6 +630,15 @@ export function PoHistory({
         <span className="ml-auto">{syncedAgo ? `synced ${syncedAgo}` : "not synced yet"}</span>
       </footer>
 
+      {pasteOpen && (
+        <PasteRevisionsModal
+          pos={pos ?? []}
+          datesByPo={datesByPo}
+          applying={bulkApplying}
+          onApply={applyBulk}
+          onClose={() => setPasteOpen(false)}
+        />
+      )}
       {openPo && (
         <PoDetailModal
           po={openPo}
@@ -508,13 +699,37 @@ function Header({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function PoRow({ po, zebra, onOpen }: { po: PoSummary; zebra: boolean; onOpen: () => void }) {
+function PoRow({
+  po,
+  zebra,
+  onOpen,
+  checked,
+  onToggle,
+  exFactory,
+}: {
+  po: PoSummary;
+  zebra: boolean;
+  onOpen: () => void;
+  checked: boolean;
+  onToggle: () => void;
+  exFactory: string | null;
+}) {
   return (
     <tr
       onClick={onOpen}
-      className={`cursor-pointer group ${zebra ? "bg-slate-50/60 hover:bg-indigo-50/40" : "hover:bg-indigo-50/40"}`}
+      className={`cursor-pointer group ${
+        checked ? "bg-indigo-50/60" : zebra ? "bg-slate-50/60 hover:bg-indigo-50/40" : "hover:bg-indigo-50/40"
+      }`}
     >
-      <td className="px-4 py-2 border-b border-slate-100 text-slate-300 text-xs group-hover:text-indigo-400">›</td>
+      <td
+        className="px-4 py-2 border-b border-slate-100"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+      >
+        <input type="checkbox" checked={checked} readOnly className="cursor-pointer" />
+      </td>
       <td className="px-4 py-2 border-b border-slate-100 font-mono text-xs font-medium text-slate-700">{po.poNumber}</td>
       <td className="px-4 py-2 border-b border-slate-100 text-[13px] text-slate-700">
         {po.products.length === 0 ? (
@@ -531,7 +746,13 @@ function PoRow({ po, zebra, onOpen }: { po: PoSummary; zebra: boolean; onOpen: (
       <td className="px-4 py-2 border-b border-slate-100">
         <span className={`px-1.5 py-0.5 rounded text-xs ${statusClass(po.status)}`}>{po.status || "—"}</span>
       </td>
-      <td className="px-4 py-2 border-b border-slate-100 font-mono text-xs text-slate-500">{po.poDate?.slice(0, 10) ?? "—"}</td>
+      <td
+        className="px-4 py-2 border-b border-slate-100 font-mono text-xs text-slate-500"
+        title={exFactory ? `Ex-factory ${ukDate(exFactory)}` : undefined}
+      >
+        {po.poDate?.slice(0, 10) ?? "—"}
+        {exFactory && <span className="block text-[10px] text-slate-400">ex-fac {ukDate(exFactory)}</span>}
+      </td>
       <td className="px-4 py-2 border-b border-slate-100 text-right font-mono text-xs">{po.totalPrice ?? "—"}</td>
     </tr>
   );
@@ -848,6 +1069,160 @@ function PoDetailModal({
               </>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Paste-revisions modal (bulk date amend from a supplier's sheet) ----
+// Accepts pasted rows of: PO number + 1–3 dates. One date = delivery; two =
+// ex-factory then delivery; three = order sent, ex-factory, delivery (the PO
+// sheet's own column order). Shows an old→new diff before anything is applied.
+function PasteRevisionsModal({
+  pos,
+  datesByPo,
+  applying,
+  onApply,
+  onClose,
+}: {
+  pos: PoSummary[];
+  datesByPo: Record<string, { orderSent: string | null; exFactory: string | null; delivery: string | null }>;
+  applying: boolean;
+  onApply: (changes: Array<{ poNumber: string; delivery?: string; exFactory?: string; orderSent?: string }>) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const byNumber = new Map(pos.map((p) => [p.poNumber.toUpperCase(), p]));
+
+  interface ParsedRow {
+    poNumber: string;
+    known: boolean;
+    orderSent?: string;
+    exFactory?: string;
+    delivery?: string;
+    oldDelivery: string | null;
+    oldExFactory: string | null;
+  }
+
+  const rows: ParsedRow[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const cells = line.split(/[\t,;]/).map((c) => c.trim()).filter((c) => c !== "");
+    if (cells.length < 2) continue;
+    if (/po number|purchase order/i.test(cells[0])) continue; // header row
+    const poNumber = cells[0];
+    const dates = cells.slice(1).map((c) => normalizeSheetDate(c)).filter((d): d is string => d !== null);
+    if (!dates.length) continue;
+    const match = byNumber.get(poNumber.toUpperCase());
+    const stored = match ? datesByPo[match.poNumber] : undefined;
+    const row: ParsedRow = {
+      poNumber: match?.poNumber ?? poNumber,
+      known: Boolean(match),
+      oldDelivery: stored?.delivery ?? match?.poDate?.slice(0, 10) ?? null,
+      oldExFactory: stored?.exFactory ?? null,
+    };
+    if (dates.length === 1) row.delivery = dates[0];
+    else if (dates.length === 2) [row.exFactory, row.delivery] = dates;
+    else [row.orderSent, row.exFactory, row.delivery] = dates;
+    rows.push(row);
+  }
+  const applicable = rows.filter((r) => r.known);
+  const unknown = rows.filter((r) => !r.known);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3.5 border-b border-slate-200 flex items-center">
+          <h3 className="text-sm font-semibold text-slate-900">Amend PO dates from a sheet</h3>
+          <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+        <div className="p-5 overflow-y-auto flex flex-col gap-3">
+          <p className="text-xs text-slate-500">
+            Paste rows of <b>PO number + dates</b> (tab or comma separated, straight from Excel).
+            One date = new delivery · two = ex-factory, delivery · three = order sent, ex-factory, delivery.
+            UK dates (21/06/2026) are fine.
+          </p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            placeholder={"PO471\t10/06/2026\t21/06/2026\nPO472\t05/09/2026"}
+            className="w-full border border-slate-200 rounded-md p-2.5 font-mono text-xs focus:ring-1 focus:ring-indigo-300 outline-none"
+          />
+          {unknown.length > 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              Not in the PO cache (will be skipped): {unknown.map((r) => r.poNumber).join(", ")}
+            </p>
+          )}
+          {applicable.length > 0 && (
+            <div className="border border-slate-200 rounded-md overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[10px] uppercase tracking-wide text-slate-400">
+                    <th className="px-3 py-1.5 font-medium">PO</th>
+                    <th className="px-3 py-1.5 font-medium">Delivery</th>
+                    <th className="px-3 py-1.5 font-medium">Ex-factory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {applicable.map((r) => (
+                    <tr key={r.poNumber} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5 font-mono font-medium text-slate-700">{r.poNumber}</td>
+                      <td className="px-3 py-1.5">
+                        {r.delivery ? (
+                          <>
+                            <span className="text-slate-400">{r.oldDelivery ? ukDate(r.oldDelivery) : "—"}</span>
+                            <span className="text-slate-300 mx-1.5">→</span>
+                            <span className={`font-medium ${r.delivery === r.oldDelivery ? "text-slate-400" : "text-indigo-700"}`}>
+                              {ukDate(r.delivery)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-300">unchanged</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {r.exFactory ? (
+                          <>
+                            <span className="text-slate-400">{r.oldExFactory ? ukDate(r.oldExFactory) : "—"}</span>
+                            <span className="text-slate-300 mx-1.5">→</span>
+                            <span className="font-medium text-slate-700">{ukDate(r.exFactory)}</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-300">unchanged</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3.5 border-t border-slate-200 flex items-center gap-3">
+          <span className="text-xs text-slate-500">
+            {applicable.length} PO{applicable.length === 1 ? "" : "s"} will be updated
+            {applicable.some((r) => r.delivery) ? " (delivery pushes to ShipHero's Expected Date)" : ""}
+          </span>
+          <button
+            disabled={!applicable.length || applying}
+            onClick={() =>
+              onApply(
+                applicable.map((r) => ({
+                  poNumber: r.poNumber,
+                  ...(r.delivery ? { delivery: r.delivery } : {}),
+                  ...(r.exFactory ? { exFactory: r.exFactory } : {}),
+                  ...(r.orderSent ? { orderSent: r.orderSent } : {}),
+                })),
+              )
+            }
+            className="ml-auto text-xs px-4 py-1.5 rounded-md bg-indigo-600 text-white font-medium disabled:opacity-40"
+          >
+            {applying ? "Applying…" : `Apply ${applicable.length ? `(${applicable.length})` : ""}`}
+          </button>
         </div>
       </div>
     </div>
