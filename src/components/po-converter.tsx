@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertRows } from "@/lib/shiphero/convert";
 import { buildSourceRows, PO_FIELDS, type PoField } from "@/lib/shiphero/fields";
+import { ukDate } from "@/lib/shiphero/dates";
 import type { VendorMap, PoGroup } from "@/lib/shiphero/types";
 import type { ShipheroVendor } from "@/db/schema";
 import type { AliasRow } from "@/lib/vendors";
@@ -605,6 +606,24 @@ function PoGroupRows({
             </span>
             <span className="text-slate-300">·</span>
             <span className="text-xs text-slate-500">{po.totalUnits.toLocaleString()} units</span>
+            {po.delivery ? (
+              <span
+                className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100"
+                title={`Pushed to ShipHero as Expected Date${po.exFactory ? ` · ex-factory ${ukDate(po.exFactory)}` : ""}${po.orderSent ? ` · order sent ${ukDate(po.orderSent)}` : ""}`}
+              >
+                due {ukDate(po.delivery)}
+              </span>
+            ) : (
+              <span
+                className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                title="No delivery date found in the sheet — ShipHero's Expected Date will default to today"
+              >
+                no delivery date
+              </span>
+            )}
+            {po.exFactory && (
+              <span className="text-[11px] text-slate-400">ex-fac {ukDate(po.exFactory)}</span>
+            )}
 
             <span className="ml-auto inline-flex items-center gap-2">
               {!po.statusResolved && (

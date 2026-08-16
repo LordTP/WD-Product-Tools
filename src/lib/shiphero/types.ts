@@ -15,6 +15,10 @@ export interface SourceRow {
   quantity: string | number;
   factoryCost: string | number;
   status?: string; // optional PO status column (matched against known statuses)
+  /** Raw date cells (normalised at group time): UK DD/MM/YYYY, ISO, or serial. */
+  orderSent?: string;
+  exFactory?: string;
+  delivery?: string;
   /** 1-based row number in the source sheet, for error references. */
   sourceRow: number;
 }
@@ -104,6 +108,12 @@ export interface PoGroup {
   /** Common product title across the PO, or null if it has multiple products. */
   title: string | null;
   productCount: number;
+  /** Normalised sheet dates (YYYY-MM-DD, null = missing/unparseable).
+   *  delivery drives ShipHero po_date ("Expected Date"); the others live
+   *  app-side + in the auto PO note. */
+  orderSent: string | null;
+  exFactory: string | null;
+  delivery: string | null;
   lines: OutputLine[];
 }
 

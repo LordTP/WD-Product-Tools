@@ -196,3 +196,17 @@ export const returnsCache = sqliteTable("returns_cache", {
 });
 
 export type ReturnsCache = typeof returnsCache.$inferSelect;
+
+// Per-PO dates the sheet carries but ShipHero can't hold as fields (only
+// po_date/"Expected Date" is API-writable — delivery lives there; order-sent
+// and ex-factory live here + in the auto PO note). Upserted at push time and
+// by future bulk amends. Keyed by PO number (unique per ShipHero account).
+export const poDates = sqliteTable("po_dates", {
+  poNumber: text("po_number").primaryKey(),
+  orderSent: text("order_sent"), // YYYY-MM-DD
+  exFactory: text("ex_factory"), // YYYY-MM-DD
+  delivery: text("delivery"), // YYYY-MM-DD (mirrors ShipHero po_date)
+  updatedAt: text("updated_at"),
+});
+
+export type PoDates = typeof poDates.$inferSelect;

@@ -106,6 +106,20 @@ export function initDb() {
   } catch (err) {
     console.error("[db] warehouse_day_cache init failed:", err);
   }
+  // Per-PO sheet dates ShipHero can't hold (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS po_dates (
+        po_number TEXT PRIMARY KEY,
+        order_sent TEXT,
+        ex_factory TEXT,
+        delivery TEXT,
+        updated_at TEXT
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] po_dates init failed:", err);
+  }
   // Returns (Swap RMA) cache (idempotent; not in a migration).
   try {
     sqlite.exec(

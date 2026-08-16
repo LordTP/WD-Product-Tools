@@ -12,7 +12,10 @@ export type PoField =
   | "variantSku"
   | "quantity"
   | "factoryCost"
-  | "status";
+  | "status"
+  | "orderSent"
+  | "exFactory"
+  | "delivery";
 
 export const PO_FIELDS: { key: PoField; label: string; required: boolean }[] = [
   { key: "poNumber", label: "PO Number", required: true },
@@ -24,6 +27,9 @@ export const PO_FIELDS: { key: PoField; label: string; required: boolean }[] = [
   { key: "title", label: "Product Title", required: false },
   { key: "size", label: "Size", required: false },
   { key: "status", label: "PO Status", required: false },
+  { key: "orderSent", label: "Order Sent (date)", required: false },
+  { key: "exFactory", label: "Ex-Factory (date)", required: false },
+  { key: "delivery", label: "Current Delivery (date)", required: false },
 ];
 
 /** Apply a field→column mapping to raw rows, producing normalized SourceRows. */
@@ -48,6 +54,9 @@ export function buildSourceRows(
       quantity: get(row, "quantity"),
       factoryCost: get(row, "factoryCost"),
       status: get(row, "status"),
+      orderSent: get(row, "orderSent"),
+      exFactory: get(row, "exFactory"),
+      delivery: get(row, "delivery"),
       sourceRow: i + 2, // +1 header, +1 for 1-based
     });
   });

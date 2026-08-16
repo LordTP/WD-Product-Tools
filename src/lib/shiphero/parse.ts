@@ -20,6 +20,9 @@ const ALIASES: Record<PoField, string[]> = {
   title: ["product title", "title", "product name", "name", "description"],
   size: ["size", "variant size", "product size", "size name", "sizes", "sz"],
   status: ["po status", "status", "fulfillment status", "order status"],
+  orderSent: ["order sent (date)", "order sent date", "order sent", "date order sent", "order date"],
+  exFactory: ["original ex-factory", "original ex factory", "ex-factory date", "ex factory date", "ex-factory", "ex factory", "exfactory"],
+  delivery: ["current delivery", "current delivery date", "delivery date", "expected delivery", "delivery"],
 };
 
 const norm = (s: string): string =>
@@ -72,6 +75,12 @@ export async function parseSheet(
 
 function cellToString(cell: unknown): string {
   if (cell == null) return "";
+  // xlsx date cells arrive as JS Dates — keep them unambiguous (ISO) rather
+  // than letting String() produce a locale blob the date normaliser can't trust.
+  if (cell instanceof Date) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${cell.getUTCFullYear()}-${pad(cell.getUTCMonth() + 1)}-${pad(cell.getUTCDate())}`;
+  }
   if (typeof cell === "object") {
     const obj = cell as Record<string, unknown>;
     if ("text" in obj) return String(obj.text ?? "");

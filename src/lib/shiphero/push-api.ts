@@ -9,6 +9,7 @@ import { getWarehouseId } from "./warehouse";
 import { fetchExistingPoNumbers } from "./po-pull";
 import { checkSkusExist } from "./sku-check";
 import { buildPurchaseOrderInput, isPushable } from "./push-builder";
+import { savePoDates } from "@/lib/po-dates";
 import type { PoGroup } from "./types";
 
 export interface PreflightRow {
@@ -114,6 +115,20 @@ export async function pushPurchaseOrders(
       }>(CREATE_MUTATION, { data: input });
       const id = data.purchase_order_create?.purchase_order?.id;
       results.push({ poNumber: po.poNumber, ok: true, shipheroId: id });
+      // Keep the app-side date store in step (order-sent/ex-factory have no
+      // ShipHero field; delivery mirrors what we just pushed as po_date).
+      try {
+        await savePoDates([
+          {
+            poNumber: po.poNumber,
+            orderSent: po.orderSent ?? null,
+            exFactory: po.exFactory ?? null,
+            delivery: po.delivery ?? null,
+          },
+        ]);
+      } catch {
+        /* date store is best-effort; the PO itself was created fine */
+      }
     } catch (err) {
       results.push({
         poNumber: po.poNumber,

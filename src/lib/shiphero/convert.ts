@@ -4,6 +4,7 @@
 
 import Papa from "papaparse";
 import { deriveSizeFromSku } from "@/lib/sizes";
+import { normalizeSheetDate } from "./dates";
 import {
   DEFAULTS,
   type ConvertOptions,
@@ -189,6 +190,16 @@ export function convertRows(
 
   // --- group into POs for the preview grid ---
   const groups = new Map<string, PoGroup>();
+  // First row of a PO with a non-empty value wins for each date (they're
+  // PO-level in the sheet, repeated per size row).
+  const dateFor = (po: string, field: "orderSent" | "exFactory" | "delivery"): string | null => {
+    for (const r of rows) {
+      if (trim(r.poNumber) !== po) continue;
+      const norm = normalizeSheetDate(r[field]);
+      if (norm) return norm;
+    }
+    return null;
+  };
   for (const line of lines) {
     let g = groups.get(line.poNumber);
     if (!g) {
@@ -209,6 +220,9 @@ export function convertRows(
         statusSource: st.source,
         title: null,
         productCount: 0,
+        orderSent: dateFor(line.poNumber, "orderSent"),
+        exFactory: dateFor(line.poNumber, "exFactory"),
+        delivery: dateFor(line.poNumber, "delivery"),
         lines: [],
       };
       groups.set(line.poNumber, g);

@@ -5,6 +5,7 @@
 // expected_weight_in_lbs(String), price(String). Money fields are Strings.
 
 import type { PoGroup } from "./types";
+import { poDatesNote } from "./dates";
 
 export interface PoLineInput {
   sku: string;
@@ -27,6 +28,7 @@ export interface PurchaseOrderCreateInput {
   discount: string;
   tax: string;
   po_date?: string;
+  po_note?: string;
   line_items: PoLineInput[];
 }
 
@@ -73,7 +75,13 @@ export function buildPurchaseOrderInput(
     total_price: subtotalStr, // shipping/discount/tax all zero
     discount: "0.00",
     tax: "0.00",
-    ...(opts.poDate ? { po_date: opts.poDate } : {}),
+    // The sheet's CURRENT DELIVERY drives po_date — ShipHero shows it as
+    // "Expected Date". Falls back to an explicit per-push date if given.
+    ...(po.delivery || opts.poDate ? { po_date: po.delivery ?? opts.poDate } : {}),
+    ...(() => {
+      const note = poDatesNote(po);
+      return note ? { po_note: note } : {};
+    })(),
     line_items,
   };
 }
