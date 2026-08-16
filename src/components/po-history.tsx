@@ -102,6 +102,12 @@ export function PoHistory({
   const [bulkApplying, setBulkApplying] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
+  // Pending bulk action awaiting the user's confirm (old→new preview).
+  const [bulkConfirm, setBulkConfirm] = useState<{
+    title: string;
+    field: "delivery" | "exFactory";
+    changes: Array<{ poNumber: string; delivery?: string; exFactory?: string; old: string | null }>;
+  } | null>(null);
 
   // Reads the LOCAL CACHE — instant, no API credits.
   const load = useCallback(async () => {
@@ -473,7 +479,17 @@ export function PoHistory({
             />
             <button
               disabled={!bulkDelivery || bulkApplying}
-              onClick={() => applyBulk([...selected].map((poNumber) => ({ poNumber, delivery: bulkDelivery })))}
+              onClick={() =>
+                setBulkConfirm({
+                  title: `Set delivery to ${ukDate(bulkDelivery)}`,
+                  field: "delivery",
+                  changes: [...selected].map((poNumber) => ({
+                    poNumber,
+                    delivery: bulkDelivery,
+                    old: datesByPo[poNumber]?.delivery ?? pos?.find((p) => p.poNumber === poNumber)?.poDate?.slice(0, 10) ?? null,
+                  })),
+                })
+              }
               className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
             >
               Apply
@@ -502,10 +518,18 @@ export function PoHistory({
                     const d = new Date(`${base}T00:00:00`);
                     d.setDate(d.getDate() + n);
                     const pad = (x: number) => String(x).padStart(2, "0");
-                    return { poNumber, delivery: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` };
+                    return {
+                      poNumber,
+                      delivery: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+                      old: base as string | null,
+                    };
                   })
-                  .filter((c): c is { poNumber: string; delivery: string } => c !== null);
-                applyBulk(changes);
+                  .filter((c): c is { poNumber: string; delivery: string; old: string | null } => c !== null);
+                setBulkConfirm({
+                  title: `Shift delivery by ${n > 0 ? "+" : ""}${n} days`,
+                  field: "delivery",
+                  changes,
+                });
               }}
               className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
             >
@@ -523,7 +547,17 @@ export function PoHistory({
             />
             <button
               disabled={!bulkExFactory || bulkApplying}
-              onClick={() => applyBulk([...selected].map((poNumber) => ({ poNumber, exFactory: bulkExFactory })))}
+              onClick={() =>
+                setBulkConfirm({
+                  title: `Set ex-factory to ${ukDate(bulkExFactory)}`,
+                  field: "exFactory",
+                  changes: [...selected].map((poNumber) => ({
+                    poNumber,
+                    exFactory: bulkExFactory,
+                    old: datesByPo[poNumber]?.exFactory ?? null,
+                  })),
+                })
+              }
               className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium disabled:opacity-40"
             >
               Apply
@@ -630,6 +664,66 @@ export function PoHistory({
         <span className="ml-auto">{syncedAgo ? `synced ${syncedAgo}` : "not synced yet"}</span>
       </footer>
 
+      {bulkConfirm && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4"
+          onClick={() => setBulkConfirm(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-3.5 border-b border-slate-200">
+              <h3 className="text-sm font-semibold text-slate-900">{bulkConfirm.title}</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {bulkConfirm.changes.length} PO{bulkConfirm.changes.length === 1 ? "" : "s"}
+                {bulkConfirm.field === "delivery"
+                  ? " — updates ShipHero's Expected Date"
+                  : " — app-side only (ShipHero untouched)"}
+              </p>
+            </div>
+            <div className="px-5 py-3 overflow-y-auto">
+              <table className="w-full text-xs">
+                <tbody>
+                  {bulkConfirm.changes.map((c) => (
+                    <tr key={c.poNumber} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 pr-3 font-mono font-medium text-slate-700">{c.poNumber}</td>
+                      <td className="py-1.5 text-slate-400">{c.old ? ukDate(c.old) : "—"}</td>
+                      <td className="py-1.5 px-2 text-slate-300">→</td>
+                      <td className="py-1.5 font-medium text-indigo-700">
+                        {ukDate(c.delivery ?? c.exFactory ?? "")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3.5 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setBulkConfirm(null)}
+                className="text-xs px-3.5 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={bulkApplying}
+                onClick={() => {
+                  const changes = bulkConfirm.changes.map(({ poNumber, delivery, exFactory }) => ({
+                    poNumber,
+                    ...(delivery ? { delivery } : {}),
+                    ...(exFactory ? { exFactory } : {}),
+                  }));
+                  setBulkConfirm(null);
+                  applyBulk(changes);
+                }}
+                className="text-xs px-4 py-1.5 rounded-md bg-indigo-600 text-white font-medium disabled:opacity-40"
+              >
+                Confirm & apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pasteOpen && (
         <PasteRevisionsModal
           pos={pos ?? []}
