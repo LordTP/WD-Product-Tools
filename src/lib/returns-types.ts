@@ -180,8 +180,10 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       }
     }
 
-    // Pipeline: every open return, whenever it was opened.
-    if (isOpen(r)) {
+    // Pipeline: every open v2 return, whenever it was opened. v1 legacy rows
+    // are permanently "pending" (never processed in ShipHero) — they're not
+    // really in the post, so they never belong here even when unhidden.
+    if (isOpen(r) && r.isV2) {
       const ageDays = (now - new Date(r.createdAt).getTime()) / 86_400_000;
       if (ageDays <= 7) pipeline["0–7 days"]++;
       else if (ageDays <= 14) pipeline["7–14 days"]++;
