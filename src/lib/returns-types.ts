@@ -10,7 +10,10 @@ export interface ReturnItem {
   restock: boolean;
   condition: string | null;
   reason: string | null;
-  price: number; // order line unit price (retail £) — refund-exposure proxy
+  /** Unit price NET of promotion discount, still inc tax (ex-tax applied via
+   *  the row's exVatFactor at aggregation). Rows cached before Aug 2026 carry
+   *  the gross price. */
+  price: number;
 }
 
 export interface ReturnEvent {
@@ -33,7 +36,10 @@ export interface ReturnRow {
   expected: number;
   received: number;
   restocked: number;
-  value: number; // Σ item price × qty expected
+  /** (total_price − total_tax) / total_price from the ORDER — UK ≈ 0.833,
+   *  zero-rated international = 1. Missing on rows cached before Aug 2026. */
+  exVatFactor?: number;
+  value: number; // Σ item price × qty expected, ex tax (Shopify basis)
   exchangeOrders: string[]; // order numbers of linked exchange orders
   items: ReturnItem[];
   history: ReturnEvent[];
@@ -136,7 +142,8 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       openedByDay.set(r.createdAt.slice(0, 10), (openedByDay.get(r.createdAt.slice(0, 10)) ?? 0) + 1);
       if (r.exchangeOrders.length) exchanges++;
       if (isOpen(r)) {
-        valueOpen += r.items.reduce((a, it) => a + Math.max(0, it.quantity - it.received) * it.price, 0);
+        const f = r.exVatFactor ?? 1 / 1.2; // pre-Aug-2026 cached rows: assume UK VAT
+        valueOpen += r.items.reduce((a, it) => a + Math.max(0, it.quantity - it.received) * it.price, 0) * f;
       }
       for (const it of r.items) {
         const reason = (it.reason || r.reason || "Other").trim() || "Other";
@@ -160,7 +167,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       processedReturns++;
       unitsReceived += r.received;
       unitsRestocked += r.restocked;
-      valueProcessed += r.items.reduce((a, it) => a + it.received * it.price, 0);
+      valueProcessed += r.items.reduce((a, it) => a + it.received * it.price, 0) * (r.exVatFactor ?? 1 / 1.2);
       turnarounds.push((new Date(firstReceive.at).getTime() - new Date(r.createdAt).getTime()) / 86_400_000);
       processedByDay.set(firstReceive.at.slice(0, 10), (processedByDay.get(firstReceive.at.slice(0, 10)) ?? 0) + 1);
     }

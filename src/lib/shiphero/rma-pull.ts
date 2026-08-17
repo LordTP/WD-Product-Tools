@@ -23,7 +23,7 @@ interface RawReturnNode {
   total_items_expected?: number;
   total_items_received?: number;
   total_items_restocked?: number;
-  order?: { order_number?: string | null } | null;
+  order?: { order_number?: string | null; total_tax?: string | null; total_price?: string | null } | null;
   exchanges?: Array<{ exchange_order?: { order_number?: string | null } | null }> | null;
   line_items?: Array<{
     quantity?: number;
@@ -31,22 +31,35 @@ interface RawReturnNode {
     restock?: number;
     condition?: string | null;
     reason?: string | null;
-    line_item?: { sku?: string | null; product_name?: string | null; price?: string | null } | null;
+    line_item?: {
+      sku?: string | null;
+      product_name?: string | null;
+      price?: string | null;
+      promotion_discount?: string | null;
+      quantity?: number | null;
+    } | null;
   }> | null;
   return_history?: Array<{ user_id?: string | null; created_at?: string; body?: string | null }> | null;
 }
 
 function toRow(n: RawReturnNode, userNames: Record<string, string>): ReturnRow {
-  const items: ReturnItem[] = (n.line_items ?? []).map((li) => ({
-    sku: li.line_item?.sku ?? "?",
-    productName: li.line_item?.product_name ?? li.line_item?.sku ?? "?",
-    quantity: Number(li.quantity ?? 0),
-    received: Number(li.quantity_received ?? 0),
-    restock: Number(li.restock ?? 0) > 0,
-    condition: li.condition ?? null,
-    reason: li.reason ?? null,
-    price: Number(li.line_item?.price ?? 0) || 0,
-  }));
+  const items: ReturnItem[] = (n.line_items ?? []).map((li) => {
+    // Net-of-discount unit price (still inc VAT — the ex-VAT step happens at
+    // aggregation). promotion_discount is a line total, so prorate per unit.
+    const gross = Number(li.line_item?.price ?? 0) || 0;
+    const lineQty = Number(li.line_item?.quantity ?? 1) || 1;
+    const promo = Number(li.line_item?.promotion_discount ?? 0) || 0;
+    return {
+      sku: li.line_item?.sku ?? "?",
+      productName: li.line_item?.product_name ?? li.line_item?.sku ?? "?",
+      quantity: Number(li.quantity ?? 0),
+      received: Number(li.quantity_received ?? 0),
+      restock: Number(li.restock ?? 0) > 0,
+      condition: li.condition ?? null,
+      reason: li.reason ?? null,
+      price: Math.max(0, gross - promo / lineQty),
+    };
+  });
   const history: ReturnEvent[] = (n.return_history ?? [])
     .map((h) => ({
       at: h.created_at ?? "",
@@ -56,6 +69,12 @@ function toRow(n: RawReturnNode, userNames: Record<string, string>): ReturnRow {
       body: (h.body ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
     }))
     .sort((a, b) => a.at.localeCompare(b.at));
+  // Effective ex-tax multiplier from the ORDER's own numbers: UK ≈ 0.8333
+  // (÷1.2), zero-rated international = 1. Fallback to UK VAT when the order's
+  // totals are unusable (most orders are GB).
+  const tp = Number(n.order?.total_price ?? 0) || 0;
+  const tax = Number(n.order?.total_tax ?? 0) || 0;
+  const exVatFactor = tp > 0 && tax >= 0 && tax < tp ? (tp - tax) / tp : 1 / 1.2;
   return {
     id: n.id ?? "",
     legacyId: Number(n.legacy_id ?? 0),
@@ -69,7 +88,9 @@ function toRow(n: RawReturnNode, userNames: Record<string, string>): ReturnRow {
     expected: Number(n.total_items_expected ?? 0),
     received: Number(n.total_items_received ?? 0),
     restocked: Number(n.total_items_restocked ?? 0),
-    value: items.reduce((a, it) => a + it.price * it.quantity, 0),
+    exVatFactor,
+    // Shopify basis: net of discounts (in price) and ex tax (factor).
+    value: items.reduce((a, it) => a + it.price * it.quantity, 0) * exVatFactor,
     exchangeOrders: (n.exchanges ?? [])
       .map((e) => e.exchange_order?.order_number ?? "")
       .filter(Boolean),
@@ -94,10 +115,10 @@ export async function pullReturns(
           id legacy_id created_at status reason partner_id shipping_carrier
           cost_to_customer display_issue_refund
           total_items_expected total_items_received total_items_restocked
-          order { order_number }
+          order { order_number total_tax total_price }
           exchanges { exchange_order { order_number } }
           line_items { quantity quantity_received restock condition reason
-            line_item { sku product_name price } }
+            line_item { sku product_name price promotion_discount quantity } }
           return_history { user_id created_at body }
         } } } } }`;
     const { data } = await shipheroGraphql<{

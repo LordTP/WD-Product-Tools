@@ -264,7 +264,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             <Kpi
               v={fmtMoney(summary.valueProcessed)}
               label="Value processed"
-              sub={`${fmtMoney(summary.valueOpen)} still coming back`}
+              sub={`${fmtMoney(summary.valueOpen)} still coming back · ex tax & discounts`}
             />
             <Kpi
               v={summary.avgTurnaroundDays != null ? `${summary.avgTurnaroundDays.toFixed(1)}d` : "—"}
@@ -555,7 +555,9 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
           </Panel>
 
           <p className="text-[11px] text-slate-400 pb-2">
-            Value = retail value of returned goods from order line prices — actual refund £ lives in Swap/Shopify.
+            Values are on the Shopify basis — net of promotion discounts and tax (per-order rate, so
+            zero-rated international orders aren&apos;t trimmed) — and should track Shopify&apos;s sales-reversals
+            within a refund-processing lag; store-credit resolutions never appear in Shopify&apos;s figure.
             Sync re-pulls open returns + the last 14 days; completed returns freeze in the cache.
           </p>
         </div>
