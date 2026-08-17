@@ -473,25 +473,29 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                   <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">By product</p>
                   {(() => {
                     const max = summary.faultyProducts[0]?.units ?? 1;
-                    return summary.faultyProducts.map((p) => (
-                      <div key={p.key} className="grid grid-cols-[1fr_90px_86px] gap-2.5 items-center mb-2 text-[13px]">
-                        <span className="truncate text-slate-600" title={p.key}>{p.key}</span>
-                        <span className="h-3 bg-slate-100 rounded overflow-hidden self-center">
-                          <span
-                            className="block h-full bg-rose-500 rounded-r"
-                            style={{ width: `${(p.units / max) * 100}%` }}
-                          />
-                        </span>
-                        <span className="text-right tabular-nums text-slate-900">
-                          {p.units}
-                          <span className="text-slate-400"> / {p.totalReturned} ret.</span>
-                        </span>
-                      </div>
-                    ));
+                    return summary.faultyProducts.map((p) => {
+                      const pct = Math.round((p.units / Math.max(1, p.totalReturned)) * 100);
+                      return (
+                        <div key={p.key} className="grid grid-cols-[1fr_70px_170px] gap-2.5 items-center mb-2 text-[13px]">
+                          <span className="truncate text-slate-600" title={p.key}>{p.key}</span>
+                          <span className="h-3 bg-slate-100 rounded overflow-hidden self-center">
+                            <span
+                              className="block h-full bg-rose-500 rounded-r"
+                              style={{ width: `${(p.units / max) * 100}%` }}
+                            />
+                          </span>
+                          <span className="text-right tabular-nums whitespace-nowrap">
+                            <b className="text-rose-600">{p.units} faulty</b>
+                            <span className="text-slate-500"> of {p.totalReturned} returned</span>
+                            <span className={`ml-1.5 text-[11px] font-medium ${pct >= 50 ? "text-rose-600" : "text-slate-400"}`}>({pct}%)</span>
+                          </span>
+                        </div>
+                      );
+                    });
                   })()}
                   <p className="text-[11px] text-slate-400 mt-2">
-                    Right-hand number = ALL returns of that product in the window — a high faulty share is a
-                    production problem, a low one is normal wear-and-tear.
+                    &ldquo;2 faulty of 10 returned&rdquo; = this product came back 10 times this period, 2 of those
+                    for a fault. A high % on decent volume = likely production problem.
                   </p>
                 </div>
                 <div>
