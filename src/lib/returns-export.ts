@@ -179,6 +179,32 @@ export async function buildReturnsExport(opts: {
     });
     t.getCell(1).alignment = { horizontal: "left" };
     t.getCell(1 + reasonCols.length + 3).numFmt = "#,##0";
+    rowIdx++;
+
+    // mix row: each reason as a % of this product's returned units
+    const mix = det.getRow(rowIdx);
+    const topReasonUnits = Math.max(...reasonCols.map((rc) => p.reasons.get(rc) ?? 0), 0);
+    mix.values = [
+      "mix",
+      ...reasonCols.map((rc) => (p.units ? (p.reasons.get(rc) ?? 0) / p.units : "")),
+      1,
+      p.units && p.faulty ? p.faulty / p.units : "",
+      "",
+    ];
+    mix.eachCell((c, col) => {
+      c.border = border;
+      c.numFmt = "0.0%";
+      c.alignment = { horizontal: "center" };
+      c.font = { size: 10, italic: true, color: { argb: "FF64748B" } };
+      // bold the dominant reason so the mix reads at a glance
+      if (col > 1 && col <= 1 + reasonCols.length && topReasonUnits > 0 && (p.reasons.get(reasonCols[col - 2]) ?? 0) === topReasonUnits) {
+        c.font = { size: 10, bold: true, color: { argb: "FF4F46E5" } };
+      }
+    });
+    mix.getCell(1).alignment = { horizontal: "left" };
+    if (p.faulty && p.units && p.faulty / p.units >= 0.5) {
+      mix.getCell(1 + reasonCols.length + 2).font = { size: 10, bold: true, color: { argb: ROSE } };
+    }
     rowIdx += 2; // blank spacer row between products
   }
 
