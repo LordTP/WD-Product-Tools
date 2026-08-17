@@ -57,6 +57,39 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
   const [personFilter, setPersonFilter] = useState<string | null>(null);
   const [productFocus, setProductFocus] = useState<string | null>(null);
   const [focusQuery, setFocusQuery] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState("2026-07-14");
+  const [exportTo, setExportTo] = useState(localYmd(new Date()));
+  const [exportLegacy, setExportLegacy] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  async function runExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/returns-hub/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: exportFrom, to: exportTo, includeLegacy: exportLegacy }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Export failed.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `returns-rollup_${exportFrom}_to_${exportTo}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -548,6 +581,16 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                     Clear ✕
                   </button>
                 )}
+                <button
+                  onClick={() => setExportOpen(true)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5"
+                  title="Export every product's roll-up (reasons × sizes) to Excel"
+                >
+                  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                  Export all
+                </button>
               </div>
             }
           >
@@ -814,6 +857,52 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
               )}
             </div>
           </Panel>
+
+          {exportOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setExportOpen(false)}>
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <div className="px-5 py-3.5 border-b border-slate-200 flex items-center">
+                  <h3 className="text-sm font-semibold text-slate-900">Export returns roll-up</h3>
+                  <button onClick={() => setExportOpen(false)} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>
+                </div>
+                <div className="p-5 flex flex-col gap-4 text-sm">
+                  <p className="text-xs text-slate-500">
+                    An Excel with a <b>Summary</b> sheet (one row per product: units, faulty %, value, top reason)
+                    and a <b>By product &amp; size</b> sheet (each product's sizes × reasons grid). Uses the cached
+                    returns — hit Sync first if you want today included.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      From
+                      <input type="date" value={exportFrom} max={exportTo} onChange={(e) => setExportFrom(e.target.value)}
+                        className="border border-slate-200 rounded-md px-2 py-1 bg-white" />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      To
+                      <input type="date" value={exportTo} min={exportFrom} max={localYmd(new Date())} onChange={(e) => setExportTo(e.target.value)}
+                        className="border border-slate-200 rounded-md px-2 py-1 bg-white" />
+                    </label>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-600 select-none">
+                    <input type="checkbox" checked={exportLegacy} onChange={(e) => setExportLegacy(e.target.checked)} />
+                    Include pre-Swap-v2 returns (before 3 Aug) — more data for reason analysis
+                  </label>
+                </div>
+                <div className="px-5 py-3.5 border-t border-slate-200 flex justify-end gap-2">
+                  <button onClick={() => setExportOpen(false)} className="text-xs px-3.5 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={runExport}
+                    disabled={exporting}
+                    className="text-xs px-4 py-1.5 rounded-md bg-indigo-600 text-white font-medium disabled:opacity-40"
+                  >
+                    {exporting ? "Building…" : "Download Excel"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <p className="text-[11px] text-slate-400 pb-2">
             Values are on the Shopify basis — net of promotion discounts and tax (per-order rate, so
