@@ -117,9 +117,17 @@ export function isOpen(r: ReturnRow): boolean {
   return OPEN_STATUSES.has((r.status || "").toLowerCase());
 }
 
+const SIZE_TAIL = /\s+[-–]?\s*(XXS|XS|S|M|L|XL|XXL|S-M|M-L|L-XL|XS-S|UK \d+|ONE SIZE)$/i;
+
 /** Strip the size suffix off a product name so sizes group ("… | LEMON XS" → "… | LEMON"). */
-function productKey(name: string): string {
-  return name.replace(/\s+(XXS|XS|S|M|L|XL|UK \d+|ONE SIZE)$/i, "").trim();
+export function productKey(name: string): string {
+  return name.replace(SIZE_TAIL, "").replace(/\s+[-–]$/, "").trim();
+}
+
+/** The size the product name carries ("… | LEMON XS" → "XS"), or "?" */
+export function sizeOf(name: string): string {
+  const m = name.match(SIZE_TAIL);
+  return m ? m[1].toUpperCase() : "?";
 }
 
 /**

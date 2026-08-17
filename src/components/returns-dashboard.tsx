@@ -11,6 +11,8 @@ import {
   isOpen,
   isFaultyItem,
   isFaultyRow,
+  productKey,
+  sizeOf,
   timeHM,
   dayLabel,
   type ReturnRow,
@@ -53,6 +55,8 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [personFilter, setPersonFilter] = useState<string | null>(null);
+  const [productFocus, setProductFocus] = useState<string | null>(null);
+  const [focusQuery, setFocusQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -116,6 +120,62 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
     [baseRows, fromIso, toIso],
   );
 
+  // ---- product roll-up (all sizes of one product, current window) ----
+  const productNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of baseRows) for (const it of r.items) s.add(productKey(it.productName || it.sku));
+    return [...s].sort();
+  }, [baseRows]);
+
+  /** Resolve typed text to a product key: exact name, SKU, or single fuzzy hit. */
+  function resolveFocus(q: string): string | null {
+    const t = q.trim();
+    if (!t) return null;
+    if (productNames.includes(t)) return t;
+    if (/^WD-\d/i.test(t)) {
+      for (const r of baseRows) {
+        const hit = r.items.find((it) => it.sku.toUpperCase().startsWith(t.toUpperCase()));
+        if (hit) return productKey(hit.productName || hit.sku);
+      }
+      return null;
+    }
+    const matches = productNames.filter((n) => n.toLowerCase().includes(t.toLowerCase()));
+    return matches.length >= 1 ? matches[0] : null;
+  }
+
+  const focusData = useMemo(() => {
+    if (!productFocus) return null;
+    const reasons = new Map<string, number>();
+    const sizes = new Map<string, { units: number; faulty: number }>();
+    let units = 0, faulty = 0, value = 0, returnsCount = 0;
+    const rowIds = new Set<string>();
+    for (const r of windowRows) {
+      let inReturn = false;
+      for (const it of r.items) {
+        if (productKey(it.productName || it.sku) !== productFocus) continue;
+        inReturn = true;
+        units += it.quantity;
+        value += it.quantity * it.price * (r.exVatFactor ?? 1 / 1.2);
+        const reason = (it.reason || r.reason || "Other").trim() || "Other";
+        reasons.set(reason, (reasons.get(reason) ?? 0) + it.quantity);
+        const size = sizeOf(it.productName || "");
+        const s = sizes.get(size) ?? { units: 0, faulty: 0 };
+        s.units += it.quantity;
+        if (isFaultyItem(it, r.reason)) { s.faulty += it.quantity; faulty += it.quantity; }
+        sizes.set(size, s);
+      }
+      if (inReturn) { returnsCount++; rowIds.add(r.id); }
+    }
+    const SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XS-S", "S-M", "M-L", "L-XL", "ONE SIZE", "?"];
+    return {
+      units, faulty, value, returnsCount, rowIds,
+      reasons: [...reasons.entries()].map(([key, n]) => ({ key, units: n })).sort((a, b) => b.units - a.units),
+      sizes: [...sizes.entries()]
+        .map(([key, v]) => ({ key, ...v }))
+        .sort((a, b) => SIZE_ORDER.indexOf(a.key) - SIZE_ORDER.indexOf(b.key)),
+    };
+  }, [productFocus, windowRows]);
+
   const personReturnIds = useMemo(() => {
     if (!personFilter) return null;
     const p = summary.people.find((x) => x.name === personFilter);
@@ -128,6 +188,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
     const q = search.trim().toLowerCase();
     const source = personReturnIds ? baseRows.filter((r) => personReturnIds.has(r.id)) : windowRows;
     return source.filter((r) => {
+      if (focusData && !focusData.rowIds.has(r.id)) return false;
       if (statusFilter === "open" && !isOpen(r)) return false;
       if (statusFilter === "complete" && isOpen(r)) return false;
       if (statusFilter === "faulty" && !isFaultyRow(r)) return false;
@@ -141,7 +202,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
       }
       return true;
     });
-  }, [windowRows, baseRows, personReturnIds, statusFilter, reasonFilter, search]);
+  }, [windowRows, baseRows, personReturnIds, focusData, statusFilter, reasonFilter, search]);
 
   const maxReason = summary.reasons[0]?.units ?? 1;
   const maxProduct = summary.topProducts[0]?.units ?? 1;
@@ -355,8 +416,13 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             {/* Top returned products */}
             <Panel title="Top returned products" note="units in window">
               {summary.topProducts.map((p) => (
-                <div key={p.key} className="grid grid-cols-[1fr_70px_40px] gap-2.5 items-center mb-2 text-[13px]">
-                  <span className="truncate text-slate-600" title={p.key}>{p.key}</span>
+                <div
+                  key={p.key}
+                  onClick={() => { setProductFocus(p.key); setFocusQuery(p.key); }}
+                  title="Click to roll up this product"
+                  className="grid grid-cols-[1fr_70px_40px] gap-2.5 items-center mb-2 text-[13px] cursor-pointer hover:bg-slate-50 rounded px-1 -mx-1"
+                >
+                  <span className="truncate text-slate-600">{p.key}</span>
                   <span className="h-2 bg-slate-100 rounded overflow-hidden self-center">
                     <span
                       className="block h-full bg-indigo-600 rounded-r"
@@ -448,6 +514,103 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             )}
           </Panel>
 
+          {/* Product roll-up */}
+          <Panel
+            title="Product roll-up"
+            note="all sizes of one product — why is it coming back?"
+            right={
+              <div className="flex items-center gap-2">
+                <input
+                  list="product-focus-list"
+                  value={focusQuery}
+                  onChange={(e) => {
+                    setFocusQuery(e.target.value);
+                    const hit = resolveFocus(e.target.value);
+                    if (hit && productNames.includes(e.target.value)) setProductFocus(hit);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const hit = resolveFocus(focusQuery);
+                      if (hit) { setProductFocus(hit); setFocusQuery(hit); }
+                    }
+                  }}
+                  placeholder="Search product or SKU…"
+                  className="text-xs border border-slate-200 rounded-md px-2.5 py-1 w-64 bg-white"
+                />
+                <datalist id="product-focus-list">
+                  {productNames.map((n) => <option key={n} value={n} />)}
+                </datalist>
+                {productFocus && (
+                  <button
+                    onClick={() => { setProductFocus(null); setFocusQuery(""); }}
+                    className="text-xs px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium"
+                  >
+                    Clear ✕
+                  </button>
+                )}
+              </div>
+            }
+          >
+            {!productFocus || !focusData ? (
+              <p className="text-sm text-slate-400 py-2">
+                Pick a product — search above, or click any product in the panels below. The feed filters to it too.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-4 flex-wrap mb-4">
+                  <h3 className="text-[15px] font-semibold text-slate-900">{productFocus}</h3>
+                  <span className="text-[13px] text-slate-500 tabular-nums">
+                    {focusData.returnsCount} returns · {focusData.units} units · {fmtMoney(focusData.value)} ·{" "}
+                    <span className={focusData.faulty ? "text-rose-600 font-medium" : ""}>{focusData.faulty} faulty</span>
+                  </span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Why it comes back</p>
+                    {(() => {
+                      const max = focusData.reasons[0]?.units ?? 1;
+                      return focusData.reasons.map((r) => {
+                        const bad = /fault|damag/i.test(r.key);
+                        return (
+                          <div key={r.key} className="grid grid-cols-[150px_1fr_40px] gap-2.5 items-center mb-2 text-[13px]">
+                            <span className={`truncate ${bad ? "text-rose-600 font-medium" : "text-slate-600"}`}>{r.key}</span>
+                            <span className="h-3 bg-slate-100 rounded overflow-hidden">
+                              <span
+                                className={`block h-full rounded-r ${bad ? "bg-rose-500" : "bg-indigo-600"}`}
+                                style={{ width: `${(r.units / max) * 100}%` }}
+                              />
+                            </span>
+                            <span className="text-right tabular-nums text-slate-900">{r.units}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">By size</p>
+                    {(() => {
+                      const max = Math.max(...focusData.sizes.map((s) => s.units), 1);
+                      return focusData.sizes.map((s) => (
+                        <div key={s.key} className="grid grid-cols-[70px_1fr_110px] gap-2.5 items-center mb-2 text-[13px]">
+                          <span className="text-slate-600">{s.key}</span>
+                          <span className="h-3 bg-slate-100 rounded overflow-hidden">
+                            <span className="block h-full bg-indigo-600 rounded-r" style={{ width: `${(s.units / max) * 100}%` }} />
+                          </span>
+                          <span className="text-right tabular-nums text-slate-900 whitespace-nowrap">
+                            {s.units}{s.faulty > 0 && <span className="text-rose-600"> ({s.faulty} faulty)</span>}
+                          </span>
+                        </div>
+                      ));
+                    })()}
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      A single size dominating &ldquo;does not fit&rdquo; = grading issue on that size.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </Panel>
+
           {/* Faulty returns */}
           <Panel
             title="Faulty returns"
@@ -476,8 +639,13 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                     return summary.faultyProducts.map((p) => {
                       const pct = Math.round((p.units / Math.max(1, p.totalReturned)) * 100);
                       return (
-                        <div key={p.key} className="grid grid-cols-[1fr_70px_170px] gap-2.5 items-center mb-2 text-[13px]">
-                          <span className="truncate text-slate-600" title={p.key}>{p.key}</span>
+                        <div
+                          key={p.key}
+                          onClick={() => { setProductFocus(p.key); setFocusQuery(p.key); }}
+                          title="Click to roll up this product"
+                          className="grid grid-cols-[1fr_70px_170px] gap-2.5 items-center mb-2 text-[13px] cursor-pointer hover:bg-slate-50 rounded px-1 -mx-1"
+                        >
+                          <span className="truncate text-slate-600">{p.key}</span>
                           <span className="h-3 bg-slate-100 rounded overflow-hidden self-center">
                             <span
                               className="block h-full bg-rose-500 rounded-r"
@@ -574,6 +742,15 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                     title="Showing only returns this person worked — click to clear"
                   >
                     {personFilter} ✕
+                  </button>
+                )}
+                {productFocus && (
+                  <button
+                    onClick={() => { setProductFocus(null); setFocusQuery(""); }}
+                    className="text-xs px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium max-w-[220px] truncate"
+                    title="Feed filtered to this product — click to clear"
+                  >
+                    {productFocus} ✕
                   </button>
                 )}
                 <select
