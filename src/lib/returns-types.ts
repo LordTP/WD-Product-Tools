@@ -86,6 +86,9 @@ export interface ReturnsSummary {
   outcomes: Counted[]; // Exchange vs Refund/credit (Swap doesn't split credit)
   pipeline: { bucket: string; count: number }[]; // ALL open returns by age (window-independent)
   topProducts: Counted[];
+  /** Products with faulty units in the window: units faulty + total returned
+   *  (any reason) so concentration is visible. */
+  faultyProducts: { key: string; units: number; totalReturned: number }[];
   people: PersonStats[];
   trend: TrendDay[]; // per-day opened vs processed across the window
 }
@@ -96,6 +99,17 @@ export function initialsOf(name: string): string {
 }
 
 const RECEIVE_RE = /receiv|restock|complete|process/i;
+const FAULTY_RE = /fault|damag/i;
+
+/** Item-level faulty test: customer reason OR desk-assessed condition. */
+export function isFaultyItem(it: ReturnItem, rowReason: string | null): boolean {
+  return FAULTY_RE.test(it.reason || rowReason || "") || FAULTY_RE.test(it.condition || "");
+}
+
+/** Row-level: any faulty item, or the return sits in a damaged-type status. */
+export function isFaultyRow(r: ReturnRow): boolean {
+  return FAULTY_RE.test(r.status || "") || r.items.some((it) => isFaultyItem(it, r.reason));
+}
 
 const OPEN_STATUSES = new Set(["pending"]);
 
@@ -127,6 +141,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
   let processedReturns = 0, unitsReceived = 0, unitsRestocked = 0, valueProcessed = 0;
   const reasons = new Map<string, number>();
   const products = new Map<string, number>();
+  const faultyByProduct = new Map<string, number>();
   const turnarounds: number[] = [];
   const pipeline = { "0–7 days": 0, "7–14 days": 0, "14+ days": 0 };
   const people = new Map<string, { returns: Set<string>; events: { at: string }[] }>();
@@ -148,8 +163,12 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       for (const it of r.items) {
         const reason = (it.reason || r.reason || "Other").trim() || "Other";
         reasons.set(reason, (reasons.get(reason) ?? 0) + it.quantity);
-        if (/fault|damag/i.test(reason) || /damag/i.test(it.condition || "")) faulty += it.quantity;
-        products.set(productKey(it.productName || it.sku), (products.get(productKey(it.productName || it.sku)) ?? 0) + it.quantity);
+        const key = productKey(it.productName || it.sku);
+        products.set(key, (products.get(key) ?? 0) + it.quantity);
+        if (isFaultyItem(it, r.reason)) {
+          faulty += it.quantity;
+          faultyByProduct.set(key, (faultyByProduct.get(key) ?? 0) + it.quantity);
+        }
       }
     }
 
@@ -248,6 +267,10 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
     ],
     pipeline: Object.entries(pipeline).map(([bucket, count]) => ({ bucket, count })),
     topProducts: sortCounted(products).slice(0, 8),
+    faultyProducts: [...faultyByProduct.entries()]
+      .map(([key, units]) => ({ key, units, totalReturned: products.get(key) ?? units }))
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 12),
     people: personStats,
     trend,
   };

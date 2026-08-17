@@ -9,6 +9,8 @@ import {
   deriveSummary,
   fmtMoney,
   isOpen,
+  isFaultyItem,
+  isFaultyRow,
   timeHM,
   dayLabel,
   type ReturnRow,
@@ -128,6 +130,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
     return source.filter((r) => {
       if (statusFilter === "open" && !isOpen(r)) return false;
       if (statusFilter === "complete" && isOpen(r)) return false;
+      if (statusFilter === "faulty" && !isFaultyRow(r)) return false;
       if (reasonFilter !== "all") {
         const reasons = r.items.map((i) => (i.reason || r.reason || "Other").trim());
         if (!reasons.some((x) => x === reasonFilter)) return false;
@@ -445,6 +448,82 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
             )}
           </Panel>
 
+          {/* Faulty returns */}
+          <Panel
+            title="Faulty returns"
+            note="customer-reported faulty or desk-assessed damaged, in window"
+            right={
+              <button
+                onClick={() => setStatusFilter(statusFilter === "faulty" ? "all" : "faulty")}
+                className={`text-xs px-2.5 py-1 rounded-md border ${
+                  statusFilter === "faulty"
+                    ? "bg-rose-50 border-rose-200 text-rose-700 font-medium"
+                    : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                {statusFilter === "faulty" ? "Showing in feed ✕" : "Show in feed"}
+              </button>
+            }
+          >
+            {summary.faultyProducts.length === 0 ? (
+              <Empty />
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">By product</p>
+                  {(() => {
+                    const max = summary.faultyProducts[0]?.units ?? 1;
+                    return summary.faultyProducts.map((p) => (
+                      <div key={p.key} className="grid grid-cols-[1fr_90px_86px] gap-2.5 items-center mb-2 text-[13px]">
+                        <span className="truncate text-slate-600" title={p.key}>{p.key}</span>
+                        <span className="h-3 bg-slate-100 rounded overflow-hidden self-center">
+                          <span
+                            className="block h-full bg-rose-500 rounded-r"
+                            style={{ width: `${(p.units / max) * 100}%` }}
+                          />
+                        </span>
+                        <span className="text-right tabular-nums text-slate-900">
+                          {p.units}
+                          <span className="text-slate-400"> / {p.totalReturned} ret.</span>
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                  <p className="text-[11px] text-slate-400 mt-2">
+                    Right-hand number = ALL returns of that product in the window — a high faulty share is a
+                    production problem, a low one is normal wear-and-tear.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">The items</p>
+                  <div className="max-h-64 overflow-y-auto pr-1">
+                    {windowRows
+                      .flatMap((r) =>
+                        r.items
+                          .filter((it) => isFaultyItem(it, r.reason))
+                          .map((it) => ({ r, it })),
+                      )
+                      .sort((a, b) => b.r.createdAt.localeCompare(a.r.createdAt))
+                      .slice(0, 40)
+                      .map(({ r, it }, i) => (
+                        <div key={r.id + i} className="flex items-center gap-2.5 text-[12.5px] py-1.5 border-b border-slate-100 last:border-0">
+                          <span className="tabular-nums text-slate-400 whitespace-nowrap">{dayLabel(r.createdAt)}</span>
+                          <span className="font-medium text-slate-700 whitespace-nowrap">{r.orderNumber}</span>
+                          <span className="flex-1 truncate text-slate-600" title={`${it.productName} (${it.sku})`}>
+                            {it.productName}
+                          </span>
+                          {it.condition && <span className="text-rose-600 whitespace-nowrap">{it.condition}</span>}
+                          <span className={`whitespace-nowrap ${it.received > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                            {it.received > 0 ? "at desk" : "in post"}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </Panel>
+
           {/* Daily trend */}
           <Panel title="Daily trend" note="opened vs processed per day">
             <div className="flex gap-4 text-xs text-slate-500 mb-3">
@@ -501,6 +580,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                   <option value="all">All statuses</option>
                   <option value="open">Open</option>
                   <option value="complete">Completed</option>
+                  <option value="faulty">Faulty / damaged</option>
                 </select>
                 <select
                   value={reasonFilter}
