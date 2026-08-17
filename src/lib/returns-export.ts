@@ -109,6 +109,72 @@ export async function buildReturnsExport(opts: {
   });
   sum.autoFilter = { from: "A4", to: "G4" };
 
+  // ---------- Reason-mix pivot (product level, no sizes) ----------
+  const nR = reasonCols.length;
+  const piv = wb.addWorksheet("Reason mix", {
+    views: [{ state: "frozen", ySplit: 4, xSplit: 1 }],
+  });
+  piv.columns = [
+    { width: 52 },
+    ...reasonCols.map(() => ({ width: 12 })),
+    { width: 9 },
+    { width: 2 },
+    ...reasonCols.map(() => ({ width: 10 })),
+  ];
+  piv.getCell("A1").value = "Reason mix by product";
+  piv.getCell("A1").font = { bold: true, size: 14 };
+  piv.getCell("A2").value = `${ukDate(opts.from)} → ${ukDate(opts.to)} — units on the left, each reason as a % of the product's total returns on the right.`;
+  piv.getCell("A2").font = { color: { argb: "FF64748B" }, size: 10 };
+  // group labels
+  piv.mergeCells(3, 2, 3, 1 + nR + 1);
+  piv.getCell(3, 2).value = "Units returned";
+  piv.mergeCells(3, 1 + nR + 3, 3, 1 + nR + 2 + nR);
+  piv.getCell(3, 1 + nR + 3).value = "% of product total";
+  for (const col of [2, 1 + nR + 3]) {
+    const c = piv.getCell(3, col);
+    c.font = { bold: true, size: 9, color: { argb: "FF475569" } };
+    c.alignment = { horizontal: "center" };
+  }
+  const ph = piv.getRow(4);
+  ph.values = ["Product", ...reasonCols, "Total", "", ...reasonCols];
+  ph.eachCell((c, col) => {
+    if (col === 2 + nR + 1) return; // spacer
+    c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 9 };
+    c.fill = headerFill;
+    c.border = border;
+    c.alignment = { horizontal: "center", wrapText: true };
+  });
+  ph.getCell(1).alignment = { horizontal: "left" };
+  ph.height = 24;
+  sorted.forEach((p, i) => {
+    const topUnits = Math.max(...reasonCols.map((rc) => p.reasons.get(rc) ?? 0), 0);
+    const row = piv.addRow([
+      p.key,
+      ...reasonCols.map((rc) => p.reasons.get(rc) || ""),
+      p.units,
+      "",
+      ...reasonCols.map((rc) => (p.units ? (p.reasons.get(rc) ?? 0) / p.units : "")),
+    ]);
+    row.eachCell((c, col) => {
+      if (col === 2 + nR + 1) return; // spacer
+      c.border = border;
+      c.font = { size: 10 };
+      c.alignment = { horizontal: col === 1 ? "left" : "center" };
+      if (i % 2 === 1) c.fill = bandFill;
+      if (col > 1 + nR + 2) {
+        c.numFmt = "0.0%";
+        const rc = reasonCols[col - (1 + nR + 3)];
+        if (topUnits > 0 && (p.reasons.get(rc) ?? 0) === topUnits) {
+          c.font = { size: 10, bold: true, color: { argb: "FF4F46E5" } };
+        } else {
+          c.font = { size: 10, color: { argb: "FF64748B" } };
+        }
+      }
+    });
+    row.getCell(1 + nR + 1).font = { size: 10, bold: true };
+  });
+  piv.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 1 + nR + 1 } };
+
   // ---------- Detail sheet ----------
   const det = wb.addWorksheet("By product & size");
   det.columns = [{ width: 44 }, ...reasonCols.map(() => ({ width: 13 })), { width: 9 }, { width: 9 }, { width: 11 }];
