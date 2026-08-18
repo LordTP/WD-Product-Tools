@@ -147,12 +147,13 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
         ) : (
           <>
             {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
               <Kpi rail="#059669" label="Received" value={kfmt(s.receivedUnits)} sub={`units · ${s.receivedPOs.length} PO${s.receivedPOs.length === 1 ? "" : "s"}`} />
               <Kpi rail="#0d9488" label="Put away" value={kfmt(s.putAwayUnits)} sub="from receiving" />
               <Kpi rail="#7c3aed" label="Picked" value={kfmt(s.pickedItems)} sub="into totes" />
               <Kpi rail="#4338ca" label="Shipped" value={String(s.shippedOrders)} sub={`orders · ${s.shippedUnits} units`} />
               <Kpi rail="#d97706" label="Stock moved" value={kfmt(s.movedUnits)} sub={`${s.moveCount} moves`} />
+              <Kpi rail="#0ea5e9" label="Returns received" value={kfmt(s.returnsReceivedUnits ?? 0)} sub={`units · ${s.returnsReceivedCount ?? 0} RMAs`} />
               <Kpi rail="#0284c7" label="Returns slotted" value={kfmt(s.returnsUnits)} sub="into returns bins" />
               <Kpi rail="#6366f1" label="Staff active" value={String(s.staffActive)} sub="on the floor" />
             </div>
@@ -199,7 +200,8 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                       <th className="font-medium pb-2 text-right">Received</th>
                       <th className="font-medium pb-2 text-right">Put away</th>
                       <th className="font-medium pb-2 text-right">Moved</th>
-                      <th className="font-medium pb-2 text-right">Returns</th>
+                      <th className="font-medium pb-2 text-right" title="RMAs received at the returns desk">Ret. recv</th>
+                      <th className="font-medium pb-2 text-right" title="Units slotted into returns wall bins">Ret. slotted</th>
                       <th className="font-medium pb-2 text-right">Picked</th>
                       <th className="font-medium pb-2 text-right">Shipped</th>
                       <th className="font-medium pb-2 text-right">Total</th>
@@ -222,6 +224,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.received || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.putAway || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.moved || "—"}</td>
+                        <td className="py-2 text-right tabular-nums text-slate-500">{p.returnsReceived || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.returns || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.picked || "—"}</td>
                         <td className="py-2 text-right tabular-nums text-slate-500">{p.shipped || "—"}</td>

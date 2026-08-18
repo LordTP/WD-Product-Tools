@@ -8,10 +8,12 @@ export type EventType =
   | "putaway"
   | "replenish"
   | "consolidation"
+  | "return-received"
   | "return-slotted"
   | "picked"
   | "shipped"
   | "to-qc"
+  | "to-faulty"
   | "qc-release"
   | "pick-reorg"
   | "move"
@@ -42,6 +44,9 @@ export interface PersonRow {
   received: number;
   putAway: number;
   moved: number;
+  /** RMAs received at the returns desk (Swap v2 processing). */
+  returnsReceived: number;
+  /** Units slotted into the returns wall bins. */
   returns: number;
   picked: number;
   shipped: number;
@@ -68,6 +73,10 @@ export interface WarehouseSummary {
   movedUnits: number;
   moveCount: number;
   returnsUnits: number;
+  /** Swap v2 RMA processing at the desk (units + distinct RMAs). Missing on
+   *  days cached before Aug 2026 — treat as 0. */
+  returnsReceivedUnits?: number;
+  returnsReceivedCount?: number;
   staffActive: number;
   byType: Counted[];
   flows: Flow[];
@@ -84,6 +93,7 @@ export function area(bin: string | null | undefined): string {
   const n = (bin || "").toUpperCase();
   if (!n) return "?";
   if (n === "PO") return "PO";
+  if (n === "RMA") return "RMA"; // customer return arriving at the desk
   if (n.includes("TOTE")) return "TOTE";
   if (n === "SHIPPED") return "SHIPPED";
   if (n.startsWith("BULK") || n.startsWith("STORE")) return "STORAGE";
@@ -92,7 +102,7 @@ export function area(bin: string | null | undefined): string {
   if (n.startsWith("RET")) return "RETURNS";
   if (n.includes("RECEIV")) return "RECEIVING";
   if (n.includes("AQL")) return "QC";
-  if (n.includes("QC FAIL")) return "QC FAIL";
+  if (n.includes("QC FAIL") || n.includes("FAULT")) return "FAULTY";
   return "OTHER";
 }
 
@@ -101,10 +111,12 @@ export const TYPE_META: Record<EventType, { label: string; color: string }> = {
   putaway: { label: "Put away", color: "#0d9488" },
   replenish: { label: "Replenishment", color: "#4f46e5" },
   consolidation: { label: "Consolidation (to storage)", color: "#d97706" },
+  "return-received": { label: "Return received (desk)", color: "#0ea5e9" },
   "return-slotted": { label: "Returns slotted", color: "#0284c7" },
   picked: { label: "Picked (into tote)", color: "#7c3aed" },
   shipped: { label: "Shipped", color: "#4338ca" },
   "to-qc": { label: "Sent to QC", color: "#db2777" },
+  "to-faulty": { label: "To faulty bin", color: "#be123c" },
   "qc-release": { label: "QC released", color: "#0891b2" },
   "pick-reorg": { label: "Pick-face reorg", color: "#65a30d" },
   move: { label: "Other move", color: "#64748b" },

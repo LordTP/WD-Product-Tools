@@ -37,16 +37,20 @@ interface Raw { sku: string; chg: number; reason: string; user: string; loc: str
 
 /** from-area → to-area → purpose. STORE and BULK are both reserve storage. */
 function moveType(fa: string, ta: string): EventType {
+  if (ta === "QC") return "to-qc"; // incl. QC sampling straight off receiving
+  if (ta === "FAULTY") return "to-faulty";
   if (fa === "RECEIVING") return "putaway";
   if (fa === "RETURNS" && ta === "RETURN BIN") return "return-slotted";
   if (ta === "RETURN BIN") return "return-slotted";
   if (fa === "STORAGE" && ta === "PICK FACE") return "replenish";
-  if (fa === "QC" && ta === "PICK FACE") return "qc-release";
+  if ((fa === "QC" || fa === "FAULTY") && ta === "PICK FACE") return "qc-release";
   if (ta === "STORAGE") return "consolidation";
-  if (ta === "QC") return "to-qc";
   if (fa === "PICK FACE" && ta === "PICK FACE") return "pick-reorg";
   return "move";
 }
+
+/** One-sided rows that are stock corrections, not physical moves. */
+const ADJUST_RE = /cycle count|count error|error in count|management request|product page|product app|inventory sync|adjust/i;
 
 async function resolveUsers(ids: string[]): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
@@ -133,7 +137,7 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
   const pget = (u: string) => {
     const name = uname(u);
     let p = person.get(name);
-    if (!p) { p = { name, initials: initialsOf(name), total: 0, received: 0, putAway: 0, moved: 0, returns: 0, picked: 0, shipped: 0 }; person.set(name, p); }
+    if (!p) { p = { name, initials: initialsOf(name), total: 0, received: 0, putAway: 0, moved: 0, returnsReceived: 0, returns: 0, picked: 0, shipped: 0 }; person.set(name, p); }
     return p;
   };
 
@@ -144,6 +148,11 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       const po = r.reason.match(/purchase order\s+(\S+)/i)?.[1] ?? "PO";
       events.push({ at: r.at, user: uname(r.user), sku: r.sku, qty: r.chg, fromBin: "PO", toBin: r.loc || null, reason: r.reason, type: "received", meta: po });
       const p = pget(r.user); p.total++; p.received++;
+    } else if (/added from return/.test(rl) && r.chg > 0) {
+      // Swap v2 RMA processed at the returns desk (single-sided +qty row).
+      const rma = r.reason.match(/return\s*#?\s*(\d+)/i)?.[1] ?? "RMA";
+      events.push({ at: r.at, user: uname(r.user), sku: r.sku, qty: r.chg, fromBin: "RMA", toBin: r.loc || null, reason: r.reason, type: "return-received", meta: rma });
+      const p = pget(r.user); p.total++; p.returnsReceived++;
     } else if (/picked into tote/.test(rl)) {
       const tote = r.reason.match(/into tote\s+(\S+)/i)?.[1] ?? "Tote";
       events.push({ at: r.at, user: uname(r.user), sku: r.sku, qty: r.chg, fromBin: r.loc || null, toBin: tote, reason: r.reason, type: "picked" });
@@ -172,12 +181,16 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       const both = d ?? s;
       const fromBin = s?.loc || d?.reason.match(/from bin\s+(\S+)/i)?.[1] || null;
       const toBin = d?.loc || s?.reason.match(/to bin\s+(\S+)/i)?.[1] || s?.reason.match(/added to the location\s+(\S+)/i)?.[1] || null;
-      const type = moveType(area(fromBin), area(toBin));
+      // One-sided correction rows (counts, manual edits, our own fixes) are
+      // adjustments, not moves — don't invent a "? → X" journey for them.
+      const unpaired = !d || !s;
+      const type: EventType =
+        unpaired && ADJUST_RE.test(both.reason) ? "adjust" : moveType(area(fromBin), area(toBin));
       events.push({ at: both.at, user: uname(both.user), sku: both.sku, qty: Math.abs(both.chg), fromBin, toBin, reason: both.reason, type });
       const p = pget(both.user); p.total++;
       if (type === "putaway") p.putAway++;
       else if (type === "return-slotted") p.returns++;
-      else p.moved++;
+      else if (type !== "adjust") p.moved++;
     }
   }
 
@@ -187,18 +200,21 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
   // --- aggregates ---
   const unitsByType = new Map<EventType, number>();
   const flowMap = new Map<string, number>();
-  let receivedUnits = 0, putAwayUnits = 0, pickedItems = 0, movedUnits = 0, moveCount = 0, returnsUnits = 0;
+  let receivedUnits = 0, putAwayUnits = 0, pickedItems = 0, movedUnits = 0, moveCount = 0, returnsUnits = 0, returnsReceivedUnits = 0;
   const receivedPOs = new Map<string, number>();
+  const rmasProcessed = new Set<string>();
 
   for (const e of events) {
     const u = Math.abs(e.qty);
     unitsByType.set(e.type, (unitsByType.get(e.type) ?? 0) + u);
     if (e.type === "received") { receivedUnits += u; if (e.meta) receivedPOs.set(e.meta, (receivedPOs.get(e.meta) ?? 0) + u); }
+    else if (e.type === "return-received") { returnsReceivedUnits += u; if (e.meta) rmasProcessed.add(e.meta); }
     else if (e.type === "putaway") putAwayUnits += u;
     else if (e.type === "picked") pickedItems += 1;
     else if (e.type === "return-slotted") returnsUnits += u;
+    else if (e.type === "adjust") { /* corrections don't count as moved stock */ }
     else if (e.type !== "shipped") { movedUnits += u; moveCount += 1; }
-    if (["putaway", "replenish", "consolidation", "to-qc", "qc-release", "pick-reorg", "move", "return-slotted"].includes(e.type) && (e.fromBin || e.toBin)) {
+    if (["putaway", "replenish", "consolidation", "to-qc", "to-faulty", "qc-release", "pick-reorg", "move", "return-slotted"].includes(e.type) && (e.fromBin || e.toBin)) {
       const key = `${area(e.fromBin)}→${area(e.toBin)}`;
       flowMap.set(key, (flowMap.get(key) ?? 0) + u);
     }
@@ -249,6 +265,8 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       movedUnits,
       moveCount,
       returnsUnits,
+      returnsReceivedUnits,
+      returnsReceivedCount: rmasProcessed.size,
       staffActive: [...person.keys()].filter((n) => n !== "system").length,
       byType,
       flows,

@@ -40,6 +40,7 @@ export function serviceLabel(method?: string | null, carrier?: string | null, ti
   if (m.includes("timeslot") || m.includes("specialdelivery") || t.includes("special")) return "Special";
   if (m.includes("tracked_24") || t.includes("next day")) return "Next Day";
   if (m.includes("tracked_48") || m.includes("dhl_express:domestic") || t.includes("standard")) return "Standard";
+  if (m.includes("generic")) return "Manual label"; // hand-made labels (e.g. replacements)
   return method ? method : "(none)";
 }
 
