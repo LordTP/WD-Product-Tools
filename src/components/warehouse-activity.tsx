@@ -300,7 +300,13 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                           <td className="py-1.5 text-slate-600">{e.user}</td>
                           <td className="py-1.5 font-mono text-[11px] text-slate-500">{e.sku}</td>
                           <td className={`py-1.5 text-right tabular-nums font-bold pr-4 ${e.qty >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{e.qty >= 0 ? "+" : ""}{e.qty}</td>
-                          <td className="py-1.5 pl-2 text-slate-500 whitespace-nowrap">{e.toBin === "SHIPPED" ? "→ shipped" : `${e.fromBin ? area(e.fromBin) : "?"} → ${e.toBin ? area(e.toBin) : "?"}`}</td>
+                          <td className="py-1.5 pl-2 text-slate-500 whitespace-nowrap">
+                            {e.toBin === "SHIPPED"
+                              ? "→ shipped"
+                              : e.type === "adjust"
+                                ? `${e.qty >= 0 ? "added to" : "removed from"} ${e.toBin || e.fromBin || "?"}`
+                                : `${e.fromBin ? area(e.fromBin) : "?"} → ${e.toBin ? area(e.toBin) : "?"}`}
+                          </td>
                           <td className="py-1.5 pl-3"><span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: meta.color + "1a", color: meta.color }}>{meta.label}</span></td>
                         </tr>
                       );

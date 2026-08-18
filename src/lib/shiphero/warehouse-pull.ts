@@ -49,8 +49,6 @@ function moveType(fa: string, ta: string): EventType {
   return "move";
 }
 
-/** One-sided rows that are stock corrections, not physical moves. */
-const ADJUST_RE = /cycle count|count error|error in count|management request|product page|product app|inventory sync|adjust/i;
 
 async function resolveUsers(ids: string[]): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
@@ -181,12 +179,14 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
       const both = d ?? s;
       const fromBin = s?.loc || d?.reason.match(/from bin\s+(\S+)/i)?.[1] || null;
       const toBin = d?.loc || s?.reason.match(/to bin\s+(\S+)/i)?.[1] || s?.reason.match(/added to the location\s+(\S+)/i)?.[1] || null;
-      // One-sided correction rows (counts, manual edits, our own fixes) are
-      // adjustments, not moves — don't invent a "? → X" journey for them.
+      // A real transfer ALWAYS logs two rows (−source, +destination). A row
+      // with no partner is stock appearing or vanishing — i.e. a manual
+      // add/remove on the iPad (or a count/API correction) — whatever the
+      // reason dropdown said. Never invent a "? → X" journey for those.
       const unpaired = !d || !s;
-      const type: EventType =
-        unpaired && ADJUST_RE.test(both.reason) ? "adjust" : moveType(area(fromBin), area(toBin));
-      events.push({ at: both.at, user: uname(both.user), sku: both.sku, qty: Math.abs(both.chg), fromBin, toBin, reason: both.reason, type });
+      const type: EventType = unpaired ? "adjust" : moveType(area(fromBin), area(toBin));
+      // adjustments keep their sign (added vs removed); moves are always +qty
+      events.push({ at: both.at, user: uname(both.user), sku: both.sku, qty: type === "adjust" ? both.chg : Math.abs(both.chg), fromBin, toBin, reason: both.reason, type });
       const p = pget(both.user); p.total++;
       if (type === "putaway") p.putAway++;
       else if (type === "return-slotted") p.returns++;

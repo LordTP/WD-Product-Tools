@@ -120,7 +120,7 @@ export const TYPE_META: Record<EventType, { label: string; color: string }> = {
   "qc-release": { label: "QC released", color: "#0891b2" },
   "pick-reorg": { label: "Pick-face reorg", color: "#65a30d" },
   move: { label: "Other move", color: "#64748b" },
-  adjust: { label: "Adjustment", color: "#e11d48" },
+  adjust: { label: "Manual adjustment", color: "#e11d48" },
 };
 
 export function initialsOf(name: string): string {
