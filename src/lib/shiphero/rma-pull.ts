@@ -87,7 +87,12 @@ function toRow(n: RawReturnNode, userNames: Record<string, string>): ReturnRow {
     isV2: n.display_issue_refund === true,
     expected: Number(n.total_items_expected ?? 0),
     received: Number(n.total_items_received ?? 0),
-    restocked: Number(n.total_items_restocked ?? 0),
+    // Desk sometimes flags restock on a line without marking it received —
+    // cap restock at received per line so the restock rate can't exceed 100%.
+    restocked: (n.line_items ?? []).reduce(
+      (a, li) => a + Math.min(Number(li.restock ?? 0), Number(li.quantity_received ?? 0)),
+      0,
+    ),
     exVatFactor,
     // Shopify basis: net of discounts (in price) and ex tax (factor).
     value: items.reduce((a, it) => a + it.price * it.quantity, 0) * exVatFactor,
