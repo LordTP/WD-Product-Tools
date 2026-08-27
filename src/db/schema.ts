@@ -223,3 +223,15 @@ export const poDateLog = sqliteTable("po_date_log", {
 });
 
 export type PoDateLog = typeof poDateLog.$inferSelect;
+
+// Audit log of PO un-receive corrections made through the app.
+export const poUnreceiveLog = sqliteTable("po_unreceive_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  poNumber: text("po_number").notNull(),
+  sku: text("sku").notNull(),
+  unreceived: integer("unreceived").notNull().default(0),
+  stockRemoved: text("stock_removed"), // JSON [{locationName, qty}]
+  ok: integer("ok").notNull().default(1),
+  result: text("result"), // JSON UnreceiveResult
+  createdAt: text("created_at").notNull(),
+});

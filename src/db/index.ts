@@ -135,6 +135,23 @@ export function initDb() {
   } catch (err) {
     console.error("[db] po_date_log init failed:", err);
   }
+  // PO un-receive audit log (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS po_unreceive_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        po_number TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        unreceived INTEGER NOT NULL DEFAULT 0,
+        stock_removed TEXT,
+        ok INTEGER NOT NULL DEFAULT 1,
+        result TEXT,
+        created_at TEXT NOT NULL
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] po_unreceive_log init failed:", err);
+  }
   // Returns (Swap RMA) cache (idempotent; not in a migration).
   try {
     sqlite.exec(
