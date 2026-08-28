@@ -235,3 +235,10 @@ export const poUnreceiveLog = sqliteTable("po_unreceive_log", {
   result: text("result"), // JSON UnreceiveResult
   createdAt: text("created_at").notNull(),
 });
+
+// Per-PO ShipHero history (rebuilt from inventory_changes), cached 15 min.
+export const poHistoryCache = sqliteTable("po_history_cache", {
+  poId: text("po_id").primaryKey(),
+  data: text("data").notNull(), // JSON PoHistoryData
+  fetchedAt: text("fetched_at").notNull(),
+});

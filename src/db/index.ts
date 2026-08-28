@@ -152,6 +152,18 @@ export function initDb() {
   } catch (err) {
     console.error("[db] po_unreceive_log init failed:", err);
   }
+  // PO history cache (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS po_history_cache (
+        po_id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] po_history_cache init failed:", err);
+  }
   // Returns (Swap RMA) cache (idempotent; not in a migration).
   try {
     sqlite.exec(

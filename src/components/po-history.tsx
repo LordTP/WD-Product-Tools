@@ -6,7 +6,7 @@
 // bar; clicking a row opens a side drawer (dates, sizes, edit, date history).
 // Reads are cache-only; every ShipHero write goes through an explicit confirm.
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Papa from "papaparse";
 import type { PoSummary, PoDetail, PoLineDetail } from "@/lib/shiphero/po-pull";
 import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
@@ -24,6 +24,52 @@ interface BulkConfirm {
   changes: Array<DateChange & { old: string | null }>;
 }
 interface DateLogRow { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string }
+interface HistoryEvent { at: string; user: string; sku: string; qty: number; bin: string; kind: "received" | "correction" | "other"; reason: string }
+interface HistoryPayload {
+  history: { createdAt: string | null; arrivedAt: string | null; dateClosed: string | null; skusScanned: number; events: HistoryEvent[]; fetchedAt: string };
+  dateLog: DateLogRow[];
+  unreceiveLog: Array<{ id: number; sku: string; unreceived: number; stockRemoved: string | null; ok: number; createdAt: string }>;
+  cached: boolean;
+}
+interface TimelineItem { at: string; tone: "in" | "fix" | "date" | "info"; title: string; detail?: string }
+const hm = (iso: string) => iso.slice(11, 16);
+const gapMin = (a: string, b: string) => (new Date(b).getTime() - new Date(a).getTime()) / 60_000;
+
+// Merge ShipHero receives (grouped into per-person sessions), app corrections
+// and date changes into one newest-first timeline.
+function buildTimeline(h: HistoryPayload, sizeOf: (sku: string) => string, sizeRank: (sku: string) => number): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  const H = h.history;
+  if (H.createdAt) items.push({ at: H.createdAt, tone: "info", title: "PO created in ShipHero" });
+  if (H.arrivedAt) items.push({ at: H.arrivedAt, tone: "info", title: "Marked as arrived" });
+  if (H.dateClosed) items.push({ at: H.dateClosed, tone: "info", title: "Closed" });
+  for (const r of h.dateLog) {
+    const f = r.field === "delivery" ? "Expected date" : r.field === "exFactory" ? "Ex-factory" : "Order sent";
+    items.push({ at: r.changedAt, tone: "date", title: `${f} ${r.oldValue ? ukDate(r.oldValue) : "—"} → ${r.newValue ? ukDate(r.newValue) : "—"}`, detail: r.field === "delivery" ? "Product app → ShipHero" : "Product app" });
+  }
+  for (const u of h.unreceiveLog) {
+    let stock = 0;
+    try { stock = (JSON.parse(u.stockRemoved || "[]") as Array<{ qty?: number }>).reduce((a, x) => a + (x.qty || 0), 0); } catch { /* ignore */ }
+    items.push({ at: u.createdAt, tone: "fix", title: `Un-receive ${sizeOf(u.sku)}: −${u.unreceived} off received${stock ? `, −${stock} stock` : ""}${u.ok ? "" : " (failed)"}`, detail: "Product app" });
+  }
+  const recv = H.events.filter((e) => e.kind === "received").sort((a, b) => a.at.localeCompare(b.at));
+  type Sess = { user: string; start: string; end: string; units: number; bySku: Map<string, number>; bins: Set<string> };
+  const sessions: Sess[] = [];
+  for (const e of recv) {
+    const cur = sessions[sessions.length - 1];
+    if (cur && cur.user === e.user && gapMin(cur.end, e.at) <= 45) { cur.end = e.at; cur.units += e.qty; cur.bySku.set(e.sku, (cur.bySku.get(e.sku) ?? 0) + e.qty); cur.bins.add(e.bin); }
+    else sessions.push({ user: e.user, start: e.at, end: e.at, units: e.qty, bySku: new Map([[e.sku, e.qty]]), bins: new Set([e.bin]) });
+  }
+  for (const s of sessions) {
+    const sizes = [...s.bySku.entries()].sort((a, b) => sizeRank(a[0]) - sizeRank(b[0])).map(([sku, n]) => `${sizeOf(sku) || sku} ${n}`).join(" · ");
+    items.push({ at: s.start, tone: "in", title: `${s.user} booked in ${s.units} unit${s.units === 1 ? "" : "s"}`, detail: `${sizes} · into ${[...s.bins].join(", ")}${s.end !== s.start ? ` · ${hm(s.start)}–${hm(s.end)}` : ""}` });
+  }
+  for (const e of H.events) {
+    if (e.kind === "received" || /^un-receive correction/i.test(e.reason)) continue;
+    items.push({ at: e.at, tone: e.kind === "correction" ? "fix" : "info", title: `${e.user}: ${e.qty > 0 ? "+" : ""}${e.qty} ${sizeOf(e.sku) || e.sku} in ${e.bin}`, detail: e.reason });
+  }
+  return items.sort((a, b) => b.at.localeCompare(a.at));
+}
 
 // ---------- helpers ----------
 function fmtPrice(p: string): string {
@@ -906,13 +952,22 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
   // (the parent keys this drawer by PO + dates + status, so a change remounts it with fresh state)
   const datesDirty = dSent !== (dates?.orderSent ?? "") || dExf !== (dates?.exFactory ?? "") || dExp !== expected;
 
-  // date-change history (app-side log)
-  const [log, setLog] = useState<DateLogRow[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/po/date-log?po=${encodeURIComponent(po.poNumber)}`).then((r) => r.json()).then((j) => { if (!cancelled) setLog(j.log ?? []); }).catch(() => { if (!cancelled) setLog([]); });
-    return () => { cancelled = true; };
-  }, [po.poNumber]);
+  // history: ShipHero receives/corrections (cached server-side) + app logs
+  const [hist, setHist] = useState<HistoryPayload | null>(null);
+  const [histErr, setHistErr] = useState<string | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const loadHistory = useCallback(async (refresh: boolean) => {
+    if (!po.globalId) { setHistErr("This PO has no ShipHero id in the cache yet — run a Sync."); return; }
+    setHistLoading(true); setHistErr(null);
+    try {
+      const res = await fetch(`/api/po/history?id=${encodeURIComponent(po.globalId)}&po=${encodeURIComponent(po.poNumber)}${refresh ? "&refresh=1" : ""}`);
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Couldn't read history.");
+      setHist(j as HistoryPayload);
+    } catch (e) { setHistErr(e instanceof Error ? e.message : "Couldn't read history."); }
+    finally { setHistLoading(false); }
+  }, [po.globalId, po.poNumber]);
+  useEffect(() => { void (async () => { await loadHistory(false); })(); }, [loadHistory]);
 
   // status + line edits (existing edit path → /api/po/edit)
   const [editMode, setEditMode] = useState(false);
@@ -954,6 +1009,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
 
   const sizeRank = (sku: string) => { const i = sizeMap.order.indexOf(deriveSizeFromSku(sku, sizeMap)); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
   const orderedLines = loaded ? [...loaded.lines].sort((a, b) => sizeRank(a.sku) - sizeRank(b.sku)) : [];
+  const timeline = useMemo(() => (hist ? buildTimeline(hist, (sku) => deriveSizeFromSku(sku, sizeMap), (sku) => { const i = sizeMap.order.indexOf(deriveSizeFromSku(sku, sizeMap)); return i === -1 ? Number.MAX_SAFE_INTEGER : i; }) : []), [hist, sizeMap]);
   const v = vendorParts(po.vendorName);
   const over = po.unitsReceived > po.unitsOrdered;
   const pct = po.unitsOrdered ? Math.min(100, Math.round((po.unitsReceived / po.unitsOrdered) * 100)) : 0;
@@ -1072,19 +1128,34 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
             )}
           </section>
 
-          {/* date history */}
+          {/* history */}
           <section>
-            <h3 className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium mb-2">Date changes</h3>
-            {log === null ? <p className="text-xs text-slate-400">Loading…</p> : log.length === 0 ? (
-              <p className="text-xs text-slate-400">No date changes recorded in the app for this PO yet.</p>
-            ) : (
-              <div className="flex flex-col gap-1.5 text-xs">
-                {log.map((r) => (
-                  <div key={r.id} className="grid grid-cols-[92px_1fr] gap-2">
-                    <span className="font-mono text-[10.5px] text-slate-400">{ukDate(r.changedAt.slice(0, 10))} {r.changedAt.slice(11, 16)}</span>
-                    <span className="text-slate-700">{r.field === "delivery" ? "Expected" : r.field === "exFactory" ? "Ex-factory" : "Order sent"} {r.oldValue ? ukDate(r.oldValue) : "—"} → <b>{r.newValue ? ukDate(r.newValue) : "—"}</b></span>
-                  </div>
-                ))}
+            <div className="flex items-center mb-1">
+              <h3 className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium">History</h3>
+              <div className="flex-1" />
+              {hist && <span className="text-[10.5px] text-slate-400 mr-2">as of {hm(hist.history.fetchedAt.replace("Z", ""))} · {hist.history.skusScanned} size{hist.history.skusScanned === 1 ? "" : "s"} checked</span>}
+              <button onClick={() => loadHistory(true)} disabled={histLoading} className="text-[11px] px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">{histLoading ? "Reading…" : "Refresh"}</button>
+            </div>
+            {histErr && <p className="text-[11px] text-rose-600 mb-2">{histErr}</p>}
+            {!hist && histLoading && <p className="text-xs text-slate-400">Reading ShipHero — one lookup per size received…</p>}
+            {hist && timeline.length === 0 && <p className="text-xs text-slate-400">Nothing recorded for this PO yet.</p>}
+            {hist && timeline.length > 0 && (
+              <div className="flex flex-col">
+                {timeline.map((t, i) => {
+                  const day = t.at.slice(0, 10);
+                  const newDay = i === 0 || timeline[i - 1].at.slice(0, 10) !== day;
+                  const dot = t.tone === "in" ? "bg-emerald-500" : t.tone === "fix" ? "bg-rose-500" : t.tone === "date" ? "bg-indigo-500" : "bg-slate-300";
+                  return (
+                    <Fragment key={i}>
+                      {newDay && <p className="text-[10px] uppercase tracking-wider text-slate-400 mt-2.5 mb-0.5">{ukDate(day)}</p>}
+                      <div className="grid grid-cols-[40px_10px_1fr] gap-2 py-1 items-start">
+                        <span className="font-mono text-[10.5px] text-slate-400 pt-0.5">{hm(t.at)}</span>
+                        <span className={`w-2 h-2 rounded-full mt-1.5 ${dot}`} />
+                        <span className="text-xs text-slate-800">{t.title}{t.detail && <span className="block text-[11px] text-slate-500">{t.detail}</span>}</span>
+                      </div>
+                    </Fragment>
+                  );
+                })}
               </div>
             )}
           </section>
