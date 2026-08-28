@@ -1,4 +1,4 @@
-import { getCachedSummaries } from "@/lib/po-cache";
+import { getCachedSummaries, getCachedLinesByPo } from "@/lib/po-cache";
 import { listAliases } from "@/lib/vendors";
 import { getPoDates } from "@/lib/po-dates";
 
@@ -21,7 +21,10 @@ export async function GET(req: Request) {
     .filter((p) => !mappedVendorNames || (p.vendorName && mappedVendorNames.has(p.vendorName.toLowerCase())));
 
   // App-side dates (ex-factory / order-sent live only here; delivery mirrors po_date).
-  const dates = await getPoDates(filtered.map((p) => p.poNumber));
+  const [dates, linesByPo] = await Promise.all([getPoDates(filtered.map((p) => p.poNumber)), getCachedLinesByPo()]);
+  // Every SKU on each PO, joined, so the page's search can match any fragment of a SKU.
+  const skus: Record<string, string> = {};
+  for (const p of filtered) { const lines = linesByPo[p.poNumber]; if (lines?.length) skus[p.poNumber] = lines.map((l) => l.sku).join(" "); }
 
-  return Response.json({ pos: filtered, dates, lastSyncedAt, cached: true });
+  return Response.json({ pos: filtered, dates, skus, lastSyncedAt, cached: true });
 }

@@ -259,6 +259,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
   const [exportChooser, setExportChooser] = useState(false);
   const [exportingLines, setExportingLines] = useState(false);
   const [datesByPo, setDatesByPo] = useState<Record<string, PoDatesRow>>({});
+  const [skusByPo, setSkusByPo] = useState<Record<string, string>>({}); // "sku sku sku" per PO, for search
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkApplying, setBulkApplying] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
@@ -300,6 +301,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
       if (!res.ok) throw new Error(data.error ?? "Failed to load.");
       setPos(data.pos);
       setDatesByPo(data.dates ?? {});
+      setSkusByPo(data.skus ?? {});
       setLastSyncedAt(data.lastSyncedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load.");
@@ -428,7 +430,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
         if (windowF === "unset" ? !!e : windowF === "overdue" ? !(d != null && d < 0 && !isDoneStatus(p.status)) : !(d != null && d >= 0 && d <= (windowF === "week" ? 7 : Number(windowF)))) return false;
       }
       if (q) {
-        const hay = [p.poNumber, p.legacyId ?? "", p.vendorName ?? "", p.status, ...p.products].join(" ").toLowerCase();
+        const hay = [p.poNumber, p.legacyId ?? "", p.vendorName ?? "", p.status, ...p.products, skusByPo[p.poNumber] ?? ""].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -448,7 +450,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
       }
     };
     return rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || a.poNumber.localeCompare(b.poNumber, undefined, { numeric: true }); });
-  }, [all, inView, statusF, lateOnly, vendorF, familyF, missingOnly, overOnly, windowF, query, sort, datesByPo, expectedOf, isLate, isMissing]);
+  }, [all, inView, statusF, lateOnly, vendorF, familyF, missingOnly, overOnly, windowF, query, sort, datesByPo, skusByPo, expectedOf, isLate, isMissing]);
 
   const countBy = (get: (p: PoSummary) => string) => {
     const m = new Map<string, number>();
@@ -596,7 +598,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
         <span className="font-semibold text-sm text-slate-900">PO History</span>
         <div className="relative flex-1 max-w-xl">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-          <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PO, product, colour, vendor or row id…"
+          <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PO, product, colour, vendor, SKU (any part) or row id…"
             className="w-full pl-8 pr-8 py-2 border border-slate-300 rounded-lg text-[13px] focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none" />
           <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 border border-slate-200 rounded px-1 bg-slate-50">/</kbd>
         </div>
