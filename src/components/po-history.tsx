@@ -226,6 +226,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
   const [missingOnly, setMissingOnly] = useState(false);
   const [overOnly, setOverOnly] = useState(false);
   const [groupByVendor, setGroupByVendor] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set()); // vendor groups folded away
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "expected", dir: 1 });
   const lastTick = useRef<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -605,6 +606,11 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
           {anyFilter && <button onClick={clearFilters} className="text-xs text-slate-500 hover:text-slate-800 px-2">Clear all</button>}
           <div className="flex-1" />
           <Toggle on={groupByVendor} label="Group by vendor" onClick={() => setGroupByVendor((v) => !v)} />
+          {groupByVendor && (
+            <button onClick={() => setCollapsed((prev) => (prev.size ? new Set() : new Set(groups.map((g) => g.vendor ?? ""))))} className="text-[11px] text-slate-500 hover:text-slate-800 px-1.5">
+              {collapsed.size ? "Expand all" : "Collapse all"}
+            </button>
+          )}
           <div className="flex gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 ml-2">
             {(["open", "all", "closed"] as const).map((v) => (
               <button key={v} onClick={() => { setView(v); setStatusF(null); }} className={`px-2.5 py-1 rounded-md text-xs capitalize ${view === v && !statusF ? "bg-indigo-50 text-indigo-800 font-medium" : "text-slate-500 hover:text-slate-800"}`}>{v}</button>
@@ -627,7 +633,9 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
             </thead>
             <tbody>
               {groups.map((g) => (
-                <GroupRows key={g.vendor ?? "_"} group={g} totals={totals} selected={selected} openPo={openPo?.poNumber ?? null} datesByPo={datesByPo} expectedOf={expectedOf} onOpen={openDetail} onToggle={toggleRow} />
+                <GroupRows key={g.vendor ?? "_"} group={g} totals={totals} selected={selected} openPo={openPo?.poNumber ?? null} datesByPo={datesByPo} expectedOf={expectedOf} onOpen={openDetail} onToggle={toggleRow}
+                  collapsed={g.vendor != null && collapsed.has(g.vendor)}
+                  onCollapse={() => setCollapsed((prev) => { const next = new Set(prev); const k = g.vendor ?? ""; if (next.has(k)) next.delete(k); else next.add(k); return next; })} />
               ))}
               {pos && filtered.length === 0 && !loading && (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-xs text-slate-400">
@@ -799,8 +807,9 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
 }
 
 // ---------- rows ----------
-function GroupRows({ group, totals, selected, openPo, datesByPo, expectedOf, onOpen, onToggle }: {
+function GroupRows({ group, totals, selected, openPo, datesByPo, expectedOf, onOpen, onToggle, collapsed, onCollapse }: {
   group: { vendor: string | null; rows: PoSummary[] };
+  collapsed: boolean; onCollapse: () => void;
   totals: (rows: PoSummary[]) => { ordered: number; received: number; toCome: number; value: number };
   selected: Set<string>; openPo: string | null;
   datesByPo: Record<string, PoDatesRow>; expectedOf: (p: PoSummary) => string | null;
@@ -810,14 +819,16 @@ function GroupRows({ group, totals, selected, openPo, datesByPo, expectedOf, onO
   return (
     <>
       {group.vendor != null && t && (
-        <tr className="sticky top-[37px] z-[5]">
-          <td colSpan={10} className="bg-slate-50 border-b border-slate-200 px-3 py-1.5 text-[11.5px] text-slate-700">
+        <tr className="sticky top-[37px] z-[5] cursor-pointer select-none" onClick={onCollapse} title={collapsed ? "Show this vendor's POs" : "Hide this vendor's POs"}>
+          <td colSpan={10} className={`bg-slate-50 border-b border-slate-200 px-3 py-1.5 text-[11.5px] text-slate-700 hover:bg-slate-100 ${collapsed ? "border-b-slate-300" : ""}`}>
+            <span className={`inline-block w-4 text-[9px] text-slate-400 transition-transform ${collapsed ? "" : "rotate-90"}`}>▶</span>
             <b className="text-slate-900">{vendorParts(group.vendor).full || group.vendor}</b>{vendorParts(group.vendor).full && <span className="text-slate-500"> ({vendorParts(group.vendor).short})</span>}
-            <span className="ml-3 text-slate-500 tabular-nums">{group.rows.length} POs · {t.toCome.toLocaleString()} units to come · {gbp(t.value)}</span>
+            <span className="ml-3 text-slate-500 tabular-nums">{group.rows.length} PO{group.rows.length === 1 ? "" : "s"} · {t.toCome.toLocaleString()} units to come · {gbp(t.value)}</span>
+            {collapsed && <span className="ml-3 text-[10.5px] text-slate-400">collapsed</span>}
           </td>
         </tr>
       )}
-      {group.rows.map((po) => <PoRow key={po.poNumber} po={po} dates={datesByPo[po.poNumber]} expected={expectedOf(po)} checked={selected.has(po.poNumber)} open={openPo === po.poNumber} onOpen={() => onOpen(po)} onToggle={(shift) => onToggle(po.poNumber, shift)} />)}
+      {!collapsed && group.rows.map((po) => <PoRow key={po.poNumber} po={po} dates={datesByPo[po.poNumber]} expected={expectedOf(po)} checked={selected.has(po.poNumber)} open={openPo === po.poNumber} onOpen={() => onOpen(po)} onToggle={(shift) => onToggle(po.poNumber, shift)} />)}
     </>
   );
 }
