@@ -10,6 +10,8 @@ type NavItem = {
   soon?: boolean;
   /** Indented sub-item of the entry above it. */
   sub?: boolean;
+  /** Other paths that should light this entry up (e.g. a page reached from it). */
+  also?: string[];
 };
 const NAV: { group: string; items: NavItem[] }[] = [
   {
@@ -22,9 +24,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Tools",
     items: [
-      { href: "/purchase-orders", label: "Purchase Orders", icon: PoIcon },
-      { href: "/history", label: "PO History", icon: HistoryIcon, sub: true },
-      { href: "/po-unreceive", label: "Un-receive", icon: UndoIcon, sub: true },
+      // PO History is the Purchase Orders home; the upload flow stays at
+      // /purchase-orders and is reached from its "Add PO" button.
+      { href: "/history", label: "Purchase Orders", icon: PoIcon, also: ["/purchase-orders"] },
       // Hidden for now — Swap QC returns export not ready for the team yet.
       // { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/products", label: "Products → Shopify", icon: ProductIcon },
@@ -38,6 +40,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/returns-pick-faces", label: "Returns Pick Faces", icon: BinIcon },
       { href: "/cycle-counts", label: "Cycle Counts", icon: CountIcon },
+      { href: "/po-unreceive", label: "PO Un-receive", icon: UndoIcon },
     ],
   },
   {
@@ -78,7 +81,8 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
             </p>
             {section.items.map((item) => {
               const active =
-                pathname === item.href || pathname.startsWith(item.href + "/");
+                pathname === item.href || pathname.startsWith(item.href + "/") ||
+                (item.also ?? []).some((a) => pathname === a || pathname.startsWith(a + "/"));
               const Icon = item.icon;
               return (
                 <Link
@@ -221,14 +225,6 @@ function UndoIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M3 7v6h6" />
       <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
-    </svg>
-  );
-}
-function HistoryIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-      <path d="M3 3v5h5" />
-      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8M12 7v5l4 2" />
     </svg>
   );
 }

@@ -574,6 +574,10 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
           {syncing ? "Syncing…" : "Sync"}
         </button>
         <button onClick={() => setPasteOpen(true)} title="Paste a supplier's revised dates sheet and apply in bulk" className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Amend dates</button>
+        <a href="/purchase-orders" title="Upload a StyleHero PO export and push it to ShipHero" className="text-xs px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 flex items-center gap-1.5">
+          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+          Add PO
+        </a>
         <button onClick={() => setExportChooser(true)} disabled={filtered.length === 0} className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           Export{selected.size ? ` (${selected.size})` : ""}
         </button>
