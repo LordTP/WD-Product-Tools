@@ -39,9 +39,9 @@ export function PoBreakdownModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Initial state is "loading"; callers key this modal by PO so a new PO remounts it.
   useEffect(() => {
     let alive = true;
-    setDetail("loading");
     (async () => {
       try {
         const res = await fetch(`/api/po/detail?po=${encodeURIComponent(po.poNumber)}`);

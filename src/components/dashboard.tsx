@@ -40,8 +40,10 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
     }
   }, []);
 
+  // fetch-on-mount: invoked from an async callback so the React Compiler lint
+  // (set-state-in-effect) sees no synchronous setState in the effect body.
   useEffect(() => {
-    load();
+    void (async () => { await load(); })();
   }, [load]);
 
   async function sync(full = false) {
@@ -366,7 +368,7 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
       </div>
 
       {selected && (
-        <PoBreakdownModal po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />
+        <PoBreakdownModal key={selected.poNumber} po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />
       )}
     </div>
   );

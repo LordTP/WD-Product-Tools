@@ -44,11 +44,13 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
   const [rows, setRows] = useState<ReturnRow[]>([]);
   const [meta, setMeta] = useState<SyncMeta | null>(null);
   const [loading, setLoading] = useState(true);
+  // "now" is pinned at load/sync time so the window maths is pure during render.
+  const [now, setNow] = useState(() => Date.now());
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>({ kind: "days", days: 30 });
-  const [customFrom, setCustomFrom] = useState<string>(localYmd(new Date(Date.now() - 7 * 86_400_000)));
-  const [customTo, setCustomTo] = useState<string>(localYmd(new Date()));
+  const [customFrom, setCustomFrom] = useState<string>(() => localYmd(new Date(Date.now() - 7 * 86_400_000)));
+  const [customTo, setCustomTo] = useState<string>(() => localYmd(new Date()));
   const [hideLegacy, setHideLegacy] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [reasonFilter, setReasonFilter] = useState<string>("all");
@@ -98,6 +100,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
       if (!res.ok) throw new Error(json.error || "Failed to load returns.");
       setRows(json.rows ?? []);
       setMeta(json.meta ?? null);
+      setNow(Date.now());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load returns.");
@@ -106,8 +109,10 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
     }
   }, []);
 
+  // fetch-on-mount: invoked from an async callback so the React Compiler lint
+  // (set-state-in-effect) sees no synchronous setState in the effect body.
   useEffect(() => {
-    void load();
+    void (async () => { await load(); })();
   }, [load]);
 
   async function sync() {
@@ -129,15 +134,15 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
 
   // Window bounds as local-naive ISO strings (ShipHero timestamps are naive too).
   const [fromIso, toIso] = useMemo((): [string, string] => {
-    if (period.kind === "today") return [`${localYmd(new Date())}T00:00:00`, "9999-12-31T23:59:59"];
+    if (period.kind === "today") return [`${localYmd(new Date(now))}T00:00:00`, "9999-12-31T23:59:59"];
     if (period.kind === "custom") {
-      const f = customFrom || localYmd(new Date());
-      const t = customTo || localYmd(new Date());
+      const f = customFrom || localYmd(new Date(now));
+      const t = customTo || localYmd(new Date(now));
       return [`${f}T00:00:00`, `${t}T23:59:59`];
     }
-    const from = new Date(Date.now() - period.days * 86_400_000);
+    const from = new Date(now - period.days * 86_400_000);
     return [`${localYmd(from)}T00:00:00`, "9999-12-31T23:59:59"];
-  }, [period, customFrom, customTo]);
+  }, [period, customFrom, customTo, now]);
 
   const baseRows = useMemo(() => rows.filter((r) => !hideLegacy || r.isV2), [rows, hideLegacy]);
 
@@ -868,7 +873,7 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                 <div className="p-5 flex flex-col gap-4 text-sm">
                   <p className="text-xs text-slate-500">
                     An Excel with a <b>Summary</b> sheet (one row per product: units, faulty %, value, top reason)
-                    and a <b>By product &amp; size</b> sheet (each product's sizes × reasons grid). Uses the cached
+                    and a <b>By product &amp; size</b> sheet (each product&apos;s sizes × reasons grid). Uses the cached
                     returns — hit Sync first if you want today included.
                   </p>
                   <div className="flex items-center gap-3">

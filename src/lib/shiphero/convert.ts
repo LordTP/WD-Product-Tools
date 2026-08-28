@@ -115,7 +115,6 @@ export function convertRows(
     const rn = row.sourceRow;
 
     const mapped = alias ? vendorMap[alias] : undefined;
-    const vendorResolved = Boolean(mapped);
     if (alias && !mapped) unmapped.add(alias);
 
     // --- per-row blocking validation (spec §4.5) ---

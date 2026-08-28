@@ -215,7 +215,7 @@ export function Calendar({
         </div>
       )}
 
-      {selected && <PoBreakdownModal po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />}
+      {selected && <PoBreakdownModal key={selected.poNumber} po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />}
     </div>
   );
 }

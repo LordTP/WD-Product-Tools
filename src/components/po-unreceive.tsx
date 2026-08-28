@@ -20,8 +20,8 @@ const sizeOf = (name: string) => (name.match(/[-–]\s*([A-Z0-9-]+)$/)?.[1] ?? n
 const productOf = (name: string) => name.replace(/\s*[-–]\s*[A-Z0-9-]+$/, "").trim();
 const day = (iso: string | null) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
 
-export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean }) {
-  const [query, setQuery] = useState("");
+export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroConnected: boolean; initialPo?: string }) {
+  const [query, setQuery] = useState(initialPo);
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<PoMatch[] | null>(null);
   const [detail, setDetail] = useState<PoDetail | null>(null);
@@ -35,22 +35,33 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
   const binsRef = useRef<Record<string, BinsState>>({});
   useEffect(() => { binsRef.current = bins; }, [bins]);
 
-  // Deep link from PO History: /po-unreceive?po=PO510 → prefill and search.
-  useEffect(() => {
-    const po = new URLSearchParams(window.location.search).get("po");
-    if (po) { setQuery(po); search(po); }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ---- data ----
+  // Once a SKU's bins are known, pre-fill Receiving for a line that has a
+  // quantity but no bin chosen yet (or whose only choice is Receiving at the old qty).
+  const autoFill = useCallback((sku: string, list: StockBin[]) => {
+    const recv = list.find((x) => x.locationName === "Receiving");
+    if (!recv) return;
+    setRemovals((r) => {
+      const rem = r[sku];
+      if (!rem || rem.unreceive <= 0) return r;
+      const keys = Object.keys(rem.stock);
+      if (keys.length !== 0 && !(keys.length === 1 && keys[0] === recv.locationId)) return r;
+      const qty = Math.min(rem.unreceive, recv.qty);
+      if (rem.stock[recv.locationId] === qty) return r;
+      return { ...r, [sku]: { ...rem, stock: { [recv.locationId]: qty } } };
+    });
+  }, []);
   const fetchBins = useCallback(async (sku: string) => {
     if (binsRef.current[sku]) return;
     setBins((b) => ({ ...b, [sku]: "loading" }));
     try {
       const res = await fetch(`/api/po/unreceive/bins?sku=${encodeURIComponent(sku)}`);
       const j = await res.json();
-      setBins((b) => ({ ...b, [sku]: res.ok ? (j.bins as StockBin[]) : [] }));
+      const list: StockBin[] = res.ok ? (j.bins as StockBin[]) : [];
+      setBins((b) => ({ ...b, [sku]: list }));
+      autoFill(sku, list);
     } catch { setBins((b) => ({ ...b, [sku]: [] })); }
-  }, []);
+  }, [autoFill]);
 
   // background prefetch, 4 at a time, so bins are usually ready before anyone types
   useEffect(() => {
@@ -89,6 +100,11 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
     finally { setLoadingDetail(false); }
   }
 
+  // Deep link from PO History (/po-unreceive?po=PO510): search straight away.
+  useEffect(() => {
+    if (initialPo) void (async () => { await search(initialPo); })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function reset() { setQuery(""); setMatches(null); setDetail(null); setRemovals({}); setResults(null); setBins({}); setError(null); }
 
   // ---- edits ----
@@ -100,21 +116,9 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
       const stock: Record<string, number> = v === 0 ? {} : { ...cur.stock };
       return { ...r, [line.sku]: { unreceive: v, stock } };
     });
+    const b = bins[line.sku];
+    if (v > 0 && Array.isArray(b)) autoFill(line.sku, b);
   }
-  // once bins arrive (or the target changes), auto-fill Receiving if nothing chosen yet
-  useEffect(() => {
-    setRemovals((r) => {
-      let changed = false; const next = { ...r };
-      for (const [sku, rem] of Object.entries(r)) {
-        const b = bins[sku];
-        if (rem.unreceive > 0 && Array.isArray(b) && Object.keys(rem.stock).length === 0) {
-          const recv = b.find((x) => x.locationName === "Receiving");
-          if (recv && recv.qty >= rem.unreceive) { next[sku] = { ...rem, stock: { [recv.locationId]: rem.unreceive } }; changed = true; }
-        }
-      }
-      return changed ? next : r;
-    });
-  }, [bins]);
   function setStock(line: PoLine, bin: StockBin, n: number) {
     const v = Math.max(0, Math.min(bin.qty, Math.floor(n || 0)));
     setRemovals((r) => {

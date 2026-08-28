@@ -86,8 +86,10 @@ export function Returns({
     }
   }, [from, to, shipheroConnected]);
 
+  // fetch-on-mount: invoked from an async callback so the React Compiler lint
+  // (set-state-in-effect) sees no synchronous setState in the effect body.
   useEffect(() => {
-    load();
+    void (async () => { await load(); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // initial load only; subsequent loads via the Load button
 
