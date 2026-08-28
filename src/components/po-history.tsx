@@ -236,10 +236,16 @@ function DateCell({ iso, closed }: { iso: string | null; closed: boolean }) {
 }
 
 // ---------- page ----------
-export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroConnected: boolean; statuses: string[]; sizeMap: SizeMap }) {
+// Filters live in the URL (?q=&view=&status=&late=1&vendor=&win=&family=&missing=1&over=1&group=0&sort=key:dir)
+// so Back from "Add PO" (or a shared link) lands on the same view.
+export type PoHistoryFilters = Partial<Record<"q" | "view" | "status" | "late" | "vendor" | "win" | "family" | "missing" | "over" | "group" | "sort", string>>;
+const SORT_KEYS: SortKey[] = ["po", "product", "vendor", "status", "progress", "sent", "exf", "expected", "value"];
+
+export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters = {} }: { shipheroConnected: boolean; statuses: string[]; sizeMap: SizeMap; initialFilters?: PoHistoryFilters }) {
+  const f0 = initialFilters;
   const [rangeMonths, setRangeMonths] = useState<number | null>(12);
   const [mappedOnly, setMappedOnly] = useState(true);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(f0.q ?? "");
   const [pos, setPos] = useState<PoSummary[] | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -263,17 +269,21 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
   const [statusConfirm, setStatusConfirm] = useState<{ status: string; poNumbers: string[] } | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   // filters
-  const [view, setView] = useState<"open" | "all" | "closed">("open");
-  const [statusF, setStatusF] = useState<string | null>(null);
-  const [lateOnly, setLateOnly] = useState(false);
-  const [vendorF, setVendorF] = useState<string | null>(null);
-  const [windowF, setWindowF] = useState<WindowF>("");
-  const [familyF, setFamilyF] = useState<string | null>(null);
-  const [missingOnly, setMissingOnly] = useState(false);
-  const [overOnly, setOverOnly] = useState(false);
-  const [groupByVendor, setGroupByVendor] = useState(true); // merch team think in suppliers
+  const [view, setView] = useState<"open" | "all" | "closed">(f0.view === "all" || f0.view === "closed" ? f0.view : "open");
+  const [statusF, setStatusF] = useState<string | null>(f0.status || null);
+  const [lateOnly, setLateOnly] = useState(f0.late === "1");
+  const [vendorF, setVendorF] = useState<string | null>(f0.vendor || null);
+  const [windowF, setWindowF] = useState<WindowF>((["week", "14", "30", "overdue", "unset"] as WindowF[]).includes(f0.win as WindowF) ? (f0.win as WindowF) : "");
+  const [familyF, setFamilyF] = useState<string | null>(f0.family || null);
+  const [missingOnly, setMissingOnly] = useState(f0.missing === "1");
+  const [overOnly, setOverOnly] = useState(f0.over === "1");
+  const [groupByVendor, setGroupByVendor] = useState(f0.group !== "0"); // merch team think in suppliers
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set()); // vendor groups folded away
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "expected", dir: 1 });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>(() => {
+    const [k, d] = (f0.sort ?? "").split(":");
+    return SORT_KEYS.includes(k as SortKey) ? { key: k as SortKey, dir: d === "desc" ? -1 : 1 } : { key: "expected", dir: 1 };
+  });
+  const tableRef = useRef<HTMLDivElement>(null);
   const lastTick = useRef<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -473,6 +483,32 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
     lastTick.current = poNumber;
   }
 
+  // ---- remember the view: filters → URL (no navigation), scroll → sessionStorage ----
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (query.trim()) p.set("q", query.trim());
+    if (view !== "open") p.set("view", view);
+    if (statusF) p.set("status", statusF);
+    if (lateOnly) p.set("late", "1");
+    if (vendorF) p.set("vendor", vendorF);
+    if (windowF) p.set("win", windowF);
+    if (familyF) p.set("family", familyF);
+    if (missingOnly) p.set("missing", "1");
+    if (overOnly) p.set("over", "1");
+    if (!groupByVendor) p.set("group", "0");
+    if (sort.key !== "expected" || sort.dir !== 1) p.set("sort", `${sort.key}:${sort.dir === 1 ? "asc" : "desc"}`);
+    const qs = p.toString();
+    window.history.replaceState(window.history.state, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, [query, view, statusF, lateOnly, vendorF, windowF, familyF, missingOnly, overOnly, groupByVendor, sort]);
+  useEffect(() => {
+    if (!pos || !tableRef.current) return;
+    try {
+      const y = Number(sessionStorage.getItem("po-history:scroll") ?? 0);
+      if (y > 0) tableRef.current.scrollTop = y;
+    } catch { /* storage unavailable */ }
+  }, [pos]);
+  const rememberScroll = () => { try { sessionStorage.setItem("po-history:scroll", String(tableRef.current?.scrollTop ?? 0)); } catch { /* ignore */ } };
+
   // ---- keyboard: "/" focuses search ----
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -669,7 +705,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
         </div>
 
         {/* ---------- table ---------- */}
-        <div className="flex-1 min-h-0 overflow-auto mx-5 bg-white border border-slate-200 rounded-t-xl thin-scroll">
+        <div ref={tableRef} onScroll={rememberScroll} className="flex-1 min-h-0 overflow-auto mx-5 bg-white border border-slate-200 rounded-t-xl thin-scroll">
           <table className="w-full text-sm border-collapse min-w-[1100px]">
             <thead className="sticky top-0 bg-slate-50 z-10">
               <tr className="text-left text-[10.5px] uppercase tracking-wider text-slate-500">
