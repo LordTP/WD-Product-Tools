@@ -35,6 +35,13 @@ export function serviceLabel(method?: string | null, carrier?: string | null, ti
   const m = (method || "").toLowerCase();
   const c = (carrier || "").toLowerCase();
   const t = (title || "").toLowerCase();
+  const all = `${m} ${c} ${t}`;
+  // Royal Mail international products come through with their full catalogue
+  // name ("Royal Mail International Business Parcels Tracked Boxable (Country
+  // Pricing) (MPR) - incoterm DDP") — collapse to a readable lane.
+  if (/international business parcel|tracked boxable|\bmpr\b/.test(all) || (/royal.?mail/.test(all) && /international/.test(all))) {
+    return /\bddp\b/.test(all) ? "International - RM DDP" : /\bdap\b/.test(all) ? "International - RM DAP" : "International - RM";
+  }
   if (c.includes("worldwide") || m.includes("worldwide") || m.includes("internationalparcel") || m.includes("dhl express worldwide"))
     return "International";
   if (m.includes("timeslot") || m.includes("specialdelivery") || t.includes("special")) return "Special";
@@ -52,6 +59,7 @@ export function serviceLabel(method?: string | null, carrier?: string | null, ti
  */
 export function laneLabel(method?: string | null, carrier?: string | null, title?: string | null, lineCount = 1): string {
   const svc = serviceLabel(method, carrier, title);
+  if (svc.startsWith("International -")) return svc; // already a specific RM lane
   if (svc === "International") {
     const c = (carrier || "").toLowerCase();
     const m = (method || "").toLowerCase();
