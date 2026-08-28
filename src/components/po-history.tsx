@@ -616,7 +616,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
               <tr className="text-left text-[10.5px] uppercase tracking-wider text-slate-500">
                 <th className="px-3 py-2.5 border-b border-slate-200 w-9">
                   <input type="checkbox" title="Select all visible" className="accent-indigo-600 cursor-pointer" checked={filtered.length > 0 && filtered.every((p) => selected.has(p.poNumber))}
-                    onChange={(e) => setSelected((prev) => { const next = new Set(prev); for (const p of filtered) e.target.checked ? next.add(p.poNumber) : next.delete(p.poNumber); return next; })} />
+                    onChange={(e) => setSelected((prev) => { const next = new Set(prev); for (const p of filtered) { if (e.target.checked) next.add(p.poNumber); else next.delete(p.poNumber); } return next; })} />
                 </th>
                 {th("PO", "po")}{th("Product", "product")}{th("Vendor", "vendor")}{th("Status", "status")}{th("Received / ordered", "progress")}
                 {th("Order sent", "sent")}{th("Ex-factory", "exf")}{th("Expected", "expected")}{th("Value", "value", "text-right")}
@@ -751,6 +751,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
       {/* ---------- drawer ---------- */}
       {openPo && (
         <PoDrawer
+          key={`${openPo.poNumber}|${openPo.status}|${datesByPo[openPo.poNumber]?.orderSent ?? ""}|${datesByPo[openPo.poNumber]?.exFactory ?? ""}|${datesByPo[openPo.poNumber]?.delivery ?? openPo.poDate ?? ""}`}
           po={openPo}
           detail={details[openPo.poNumber]}
           dates={datesByPo[openPo.poNumber]}
@@ -888,17 +889,16 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
   const [dSent, setDSent] = useState(dates?.orderSent ?? "");
   const [dExf, setDExf] = useState(dates?.exFactory ?? "");
   const [dExp, setDExp] = useState(expected);
-  useEffect(() => { setDSent(dates?.orderSent ?? ""); setDExf(dates?.exFactory ?? ""); setDExp(expected); }, [po.poNumber, dates?.orderSent, dates?.exFactory, expected]);
+  // (the parent keys this drawer by PO + dates + status, so a change remounts it with fresh state)
   const datesDirty = dSent !== (dates?.orderSent ?? "") || dExf !== (dates?.exFactory ?? "") || dExp !== expected;
 
   // date-change history (app-side log)
   const [log, setLog] = useState<DateLogRow[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setLog(null);
     fetch(`/api/po/date-log?po=${encodeURIComponent(po.poNumber)}`).then((r) => r.json()).then((j) => { if (!cancelled) setLog(j.log ?? []); }).catch(() => { if (!cancelled) setLog([]); });
     return () => { cancelled = true; };
-  }, [po.poNumber, dates?.orderSent, dates?.exFactory, dates?.delivery]);
+  }, [po.poNumber]);
 
   // status + line edits (existing edit path → /api/po/edit)
   const [editMode, setEditMode] = useState(false);
@@ -913,7 +913,6 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onPrev, onNext]);
-  useEffect(() => { setEditMode(false); setEditStatus(po.status); setLineEdits({}); setConfirm(false); setSaveErr(null); }, [po.poNumber, po.status]);
 
   function cancelEdit() { setEditMode(false); setConfirm(false); setLineEdits({}); setEditStatus(po.status); setSaveErr(null); }
   const statusDirty = editStatus !== po.status;

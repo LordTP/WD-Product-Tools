@@ -33,7 +33,7 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
   const [results, setResults] = useState<LineResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const binsRef = useRef<Record<string, BinsState>>({});
-  binsRef.current = bins;
+  useEffect(() => { binsRef.current = bins; }, [bins]);
 
   // Deep link from PO History: /po-unreceive?po=PO510 → prefill and search.
   useEffect(() => {
