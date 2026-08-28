@@ -14,6 +14,7 @@ import {
   type EventType,
   type WarehouseDay,
 } from "@/lib/warehouse-types";
+import { personReport } from "@/lib/warehouse-person";
 
 const TYPES: EventType[] = ["received", "putaway", "replenish", "consolidation", "return-received", "return-slotted", "picked", "shipped", "to-qc", "to-faulty", "qc-release", "pick-reorg", "move", "adjust"];
 const AV_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6"];
@@ -43,35 +44,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
   const [query, setQuery] = useState("");
   // Hover card for a person in the who-did-what table (pure client-side, from cached events).
   const [hover, setHover] = useState<{ name: string; x: number; y: number; color: string } | null>(null);
-  const hoverCard = useMemo(() => {
-    if (!hover || !day) return null;
-    const evs = day.events.filter((e) => e.user === hover.name).sort((a, b) => (a.at || "").localeCompare(b.at || ""));
-    const row = day.summary.byPerson.find((p) => p.name === hover.name);
-    const byType = new Map<string, { count: number; units: number }>();
-    const byHour = Array.from({ length: 24 }, () => 0);
-    const hourKeys = new Set<string>();
-    const bins = new Map<string, number>();
-    const pos = new Set<string>();
-    const rmas = new Set<string>();
-    for (const e of evs) {
-      const t = byType.get(e.type) ?? { count: 0, units: 0 };
-      t.count++; t.units += Math.abs(e.qty); byType.set(e.type, t);
-      const d = new Date(e.at); if (!Number.isNaN(d.getTime())) { byHour[d.getHours()]++; hourKeys.add(String(d.getHours())); }
-      const bin = e.type === "picked" ? e.fromBin : (e.toBin && e.toBin !== "SHIPPED" ? e.toBin : e.fromBin);
-      if (bin && !["PO", "RMA", "SHIPPED"].includes(bin) && !/^Tote/i.test(bin)) bins.set(bin, (bins.get(bin) ?? 0) + 1);
-      if (e.type === "received" && e.meta) pos.add(e.meta);
-      if (e.type === "return-received" && e.meta) rmas.add(e.meta);
-    }
-    const first = evs[0]?.at ?? null, last = evs[evs.length - 1]?.at ?? null;
-    return {
-      actions: evs.length + (row?.shipped ?? 0),
-      first, last, activeHours: hourKeys.size,
-      byType: [...byType.entries()].map(([type, v]) => ({ type, ...v })).sort((a, b) => b.count - a.count),
-      byHour,
-      topBins: [...bins.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4),
-      pos: [...pos], rmas: rmas.size, shipped: row?.shipped ?? 0,
-    };
-  }, [hover, day]);
+  const hoverCard = useMemo(() => (hover && day ? personReport(day, hover.name) : null), [hover, day]);
 
   const loadCached = useCallback(async (d: string) => {
     setError(null);
@@ -191,58 +164,91 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
 
             {hover && hoverCard && (
               <div
-                className="fixed z-50 pointer-events-none w-[340px] bg-white border border-slate-200 rounded-xl shadow-xl p-4"
-                style={{ left: Math.min(hover.x, (typeof window !== "undefined" ? window.innerWidth : 1400) - 356), top: hover.y + 8 }}
+                className="fixed z-50 pointer-events-none w-[600px] max-w-[calc(100vw-24px)] bg-white border border-slate-200 rounded-xl shadow-2xl p-5"
+                style={{
+                  left: Math.min(hover.x, (typeof window !== "undefined" ? window.innerWidth : 1400) - 616),
+                  top: (typeof window !== "undefined" && hover.y + 8 + 420 > window.innerHeight) ? Math.max(8, hover.y - 440) : hover.y + 8,
+                }}
               >
-                <div className="flex items-center gap-2.5 mb-2">
-                  <span className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white" style={{ background: hover.color }}>
+                {/* header */}
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-bold text-white" style={{ background: hover.color }}>
                     {hover.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-900 leading-tight">{hover.name}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {hoverCard.actions} actions
-                      {hoverCard.first && <> · {timeHM(hoverCard.first)}–{timeHM(hoverCard.last!)} · {hoverCard.activeHours} active hr{hoverCard.activeHours === 1 ? "" : "s"}</>}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-semibold text-slate-900 leading-tight">{hover.name}</p>
+                    <p className="text-[11px] text-slate-500">{date} · day summary</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[22px] font-semibold text-slate-900 leading-none tabular-nums">{hoverCard.actions}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400">actions</p>
                   </div>
                 </div>
 
-                {/* tempo 06–19 */}
-                <div className="flex items-end gap-[3px] h-7 mb-1">
-                  {hoverCard.byHour.slice(6, 20).map((v, i) => {
-                    const max = Math.max(...hoverCard.byHour, 1);
-                    return <span key={i} title={`${String(i + 6).padStart(2, "0")}:00 · ${v}`} className="flex-1 rounded-[2px]" style={{ height: `${v ? Math.max(12, (v / max) * 100) : 6}%`, background: v ? hover.color : "#e2e8f0" }} />;
-                  })}
+                {/* narrative */}
+                <div className="text-[12.5px] leading-relaxed text-slate-700 mb-4">
+                  {hoverCard.narrative.map((line, i) => <p key={i}>{line}</p>)}
                 </div>
-                <div className="flex justify-between text-[9px] text-slate-400 mb-3"><span>06:00</span><span>12:00</span><span>19:00</span></div>
 
-                {/* by type */}
-                <div className="flex flex-col gap-1 mb-3">
-                  {hoverCard.byType.slice(0, 6).map((t) => {
-                    const max = hoverCard.byType[0]?.count ?? 1;
-                    const m = metaOf(t.type);
-                    return (
-                      <div key={t.type} className="grid grid-cols-[110px_1fr_64px] items-center gap-2 text-[11px]">
-                        <span className="truncate text-slate-600">{m.label}</span>
-                        <span className="h-1.5 bg-slate-100 rounded overflow-hidden"><span className="block h-full rounded" style={{ width: `${(t.count / max) * 100}%`, background: m.color }} /></span>
-                        <span className="text-right tabular-nums text-slate-700">{t.count}<span className="text-slate-400"> · {t.units}u</span></span>
-                      </div>
-                    );
-                  })}
-                  {hoverCard.shipped > 0 && (
-                    <div className="grid grid-cols-[110px_1fr_64px] items-center gap-2 text-[11px]">
-                      <span className="text-slate-600">Shipped</span><span /><span className="text-right tabular-nums text-slate-700">{hoverCard.shipped}<span className="text-slate-400"> orders</span></span>
+                <div className="grid grid-cols-[1fr_1fr] gap-5">
+                  {/* left: the day as sessions + tempo */}
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1.5">How the day went</p>
+                    <div className="flex flex-col gap-1 mb-3">
+                      {hoverCard.sessions.slice(0, 7).map((sess, i) => (
+                        <div key={i} className="flex items-center gap-2 text-[11.5px]">
+                          <span className="tabular-nums text-slate-400 w-[86px] shrink-0">{timeHM(sess.start)}–{timeHM(sess.end)}</span>
+                          <span className="text-slate-700 truncate">{sess.kind}</span>
+                          <span className="ml-auto tabular-nums text-slate-400">{sess.count}</span>
+                        </div>
+                      ))}
+                      {hoverCard.sessions.length > 7 && <span className="text-[11px] text-slate-400">+{hoverCard.sessions.length - 7} more</span>}
                     </div>
-                  )}
-                </div>
-
-                {(hoverCard.topBins.length > 0 || hoverCard.pos.length > 0 || hoverCard.rmas > 0) && (
-                  <div className="text-[11px] text-slate-500 border-t border-slate-100 pt-2 flex flex-col gap-1">
-                    {hoverCard.topBins.length > 0 && <p><span className="text-slate-400">Worked in</span> {hoverCard.topBins.map(([b, n]) => `${b} ×${n}`).join(" · ")}</p>}
-                    {hoverCard.pos.length > 0 && <p><span className="text-slate-400">Booked in</span> {hoverCard.pos.slice(0, 5).join(", ")}{hoverCard.pos.length > 5 ? ` +${hoverCard.pos.length - 5}` : ""}</p>}
-                    {hoverCard.rmas > 0 && <p><span className="text-slate-400">Returns processed</span> {hoverCard.rmas} RMA{hoverCard.rmas === 1 ? "" : "s"}</p>}
+                    <div className="flex items-end gap-[3px] h-8">
+                      {hoverCard.byHour.slice(6, 20).map((v, i) => {
+                        const max = Math.max(...hoverCard.byHour, 1);
+                        return <span key={i} className="flex-1 rounded-[2px]" style={{ height: `${v ? Math.max(12, (v / max) * 100) : 6}%`, background: v ? hover.color : "#e2e8f0" }} />;
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-400"><span>06:00</span><span>12:00</span><span>19:00</span></div>
                   </div>
-                )}
+
+                  {/* right: numbers + breakdown + where */}
+                  <div>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {[
+                        ["Units", hoverCard.units],
+                        ["Orders picked", hoverCard.ordersPicked],
+                        ["Totes", hoverCard.totes],
+                        ["SKUs", hoverCard.skus],
+                        ["Bins", hoverCard.bins],
+                        ["Shipped", hoverCard.shipped],
+                      ].filter(([, v]) => Number(v) > 0).slice(0, 6).map(([l, v]) => (
+                        <div key={String(l)} className="bg-slate-50 rounded-md px-2 py-1.5">
+                          <p className="text-[14px] font-semibold text-slate-900 tabular-nums leading-tight">{String(v)}</p>
+                          <p className="text-[9.5px] uppercase tracking-wider text-slate-400">{String(l)}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-col gap-1 mb-3">
+                      {hoverCard.byType.slice(0, 5).map((t) => (
+                        <div key={t.type} className="grid grid-cols-[100px_1fr_74px] items-center gap-2 text-[11px]">
+                          <span className="truncate text-slate-600">{t.label}</span>
+                          <span className="h-1.5 bg-slate-100 rounded overflow-hidden"><span className="block h-full rounded" style={{ width: `${(t.count / (hoverCard.byType[0]?.count || 1)) * 100}%`, background: t.color }} /></span>
+                          <span className="text-right tabular-nums text-slate-700">{t.count}<span className="text-slate-400"> · {Math.round(t.teamShare * 100)}%</span></span>
+                        </div>
+                      ))}
+                    </div>
+                    {(hoverCard.topBins.length > 0 || hoverCard.pos.length > 0 || hoverCard.rmas > 0) && (
+                      <div className="text-[11px] text-slate-500 border-t border-slate-100 pt-2 flex flex-col gap-1">
+                        {hoverCard.topBins.length > 0 && <p><span className="text-slate-400">Worked in</span> {hoverCard.topBins.map(([b, n]) => `${b} ×${n}`).join(" · ")}</p>}
+                        {hoverCard.pos.length > 0 && <p><span className="text-slate-400">Booked in</span> {hoverCard.pos.slice(0, 6).join(", ")}{hoverCard.pos.length > 6 ? ` +${hoverCard.pos.length - 6}` : ""}</p>}
+                        {hoverCard.rmas > 0 && <p><span className="text-slate-400">Returns desk</span> {hoverCard.rmas} RMA{hoverCard.rmas === 1 ? "" : "s"} received</p>}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-2">% = share of the team&apos;s actions of that type today</p>
+                  </div>
+                </div>
               </div>
             )}
 
