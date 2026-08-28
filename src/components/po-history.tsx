@@ -1215,7 +1215,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
         <div className="fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-3 lg:p-8" onClick={() => { setUnreceiveOpen(false); onRefresh(); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden relative" onClick={(e) => e.stopPropagation()}>
             <button onClick={() => { setUnreceiveOpen(false); onRefresh(); }} className="absolute top-3.5 right-4 z-10 text-xs px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 bg-white" title="Close (the PO is re-read when you close)">Close ✕</button>
-            <PoUnreceive shipheroConnected={shipheroConnected} initialPo={po.poNumber} />
+            <PoUnreceive shipheroConnected={shipheroConnected} initialPo={po.poNumber} sizeMap={sizeMap} />
           </div>
         </div>
       )}

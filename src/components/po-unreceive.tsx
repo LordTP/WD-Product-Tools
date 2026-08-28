@@ -7,6 +7,7 @@
 //   3. Review → Confirm (the only step that writes to ShipHero)
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
 
 interface PoMatch { id: string; legacyId: string; poNumber: string; status: string; vendor: string; poDate: string | null; createdAt: string | null; lineCount: number; ordered: number; received: number }
 interface StockBin { locationId: string; locationName: string; qty: number }
@@ -20,7 +21,10 @@ const sizeOf = (name: string) => (name.match(/[-–]\s*([A-Z0-9-]+)$/)?.[1] ?? n
 const productOf = (name: string) => name.replace(/\s*[-–]\s*[A-Z0-9-]+$/, "").trim();
 const day = (iso: string | null) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
 
-export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroConnected: boolean; initialPo?: string }) {
+export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { shipheroConnected: boolean; initialPo?: string; sizeMap: SizeMap }) {
+  // Size comes from the SKU's size code (same map as PO History). ShipHero's
+  // product_name often has no size suffix, so never derive it from the name alone.
+  const sizeLabel = (l: { sku: string; productName: string }): string => deriveSizeFromSku(l.sku, sizeMap) || sizeOf(l.productName);
   const [query, setQuery] = useState(initialPo);
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<PoMatch[] | null>(null);
@@ -188,7 +192,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
                     const line = detail.lines.find((l) => l.sku === r.sku);
                     return (
                       <tr key={r.sku} className={`border-b border-slate-100 last:border-0 ${r.ok ? "" : "text-rose-700"}`}>
-                        <td className="py-2 pr-3"><b>{line ? sizeOf(line.productName) : ""}</b> <span className="font-mono text-[11px] text-slate-400">{r.sku}</span></td>
+                        <td className="py-2 pr-3"><b>{line ? sizeLabel(line) : ""}</b> <span className="font-mono text-[11px] text-slate-400">{r.sku}</span></td>
                         <td className="py-2 pr-3 tabular-nums">{r.receivedBefore != null ? <>{r.receivedBefore} → <b>{r.receivedAfter}</b></> : <span className="text-slate-300">unchanged</span>}</td>
                         <td className="py-2 tabular-nums">{r.stock.length ? r.stock.map((s, i) => <span key={i} className="mr-3">{s.locationName} {s.before} → <b>{s.after}</b>{s.ok ? "" : " ✗"}</span>) : <span className="text-slate-300">unchanged</span>}{r.error && <span className="ml-2">{r.error}</span>}</td>
                       </tr>
@@ -279,7 +283,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
                       return (
                         <tr key={l.sku} className={`border-b border-slate-100 align-top ${on ? "bg-indigo-50/40" : ""}`}>
                           <td className="px-5 py-3">
-                            <span className="text-base font-semibold text-slate-900">{sizeOf(l.productName)}</span>
+                            <span className="text-base font-semibold text-slate-900">{sizeLabel(l)}</span>
                             <span className="block text-[11px] text-slate-500 truncate max-w-[240px]" title={productOf(l.productName)}>{productOf(l.productName)}</span>
                             <span className="block font-mono text-[10.5px] text-slate-400">{l.sku}</span>
                           </td>
@@ -356,7 +360,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
                     const r = removals[l.sku];
                     return (
                       <tr key={l.sku} className="border-b border-slate-100">
-                        <td className="py-2 pr-3"><b>{sizeOf(l.productName)}</b> <span className="font-mono text-[11px] text-slate-400">{l.sku}</span></td>
+                        <td className="py-2 pr-3"><b>{sizeLabel(l)}</b> <span className="font-mono text-[11px] text-slate-400">{l.sku}</span></td>
                         <td className="py-2 pr-3 text-right tabular-nums">{l.received} → <b>{l.received - (r?.unreceive ?? 0)}</b></td>
                         <td className="py-2 pr-3">{Object.entries(r?.stock ?? {}).filter(([, q]) => q > 0).map(([id, q]) => `${binName(l.sku, id)} −${q}`).join(", ") || <span className="text-amber-600">none (counter only)</span>}</td>
                       </tr>
