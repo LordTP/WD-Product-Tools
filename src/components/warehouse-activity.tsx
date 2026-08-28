@@ -186,8 +186,13 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                 </div>
 
                 {/* narrative */}
-                <div className="text-[12.5px] leading-relaxed text-slate-700 mb-4">
-                  {hoverCard.narrative.map((line, i) => <p key={i}>{line}</p>)}
+                <div className="flex flex-col gap-1.5 mb-4">
+                  {hoverCard.narrative.map((line, i) => (
+                    <div key={i} className="grid grid-cols-[84px_1fr] gap-2 text-[12.5px] leading-snug">
+                      <span className="font-semibold text-slate-900">{line.title}</span>
+                      <span className="text-slate-700">{line.text}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-[1fr_1fr] gap-5">
@@ -239,9 +244,8 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                         </div>
                       ))}
                     </div>
-                    {(hoverCard.topBins.length > 0 || hoverCard.pos.length > 0 || hoverCard.rmas > 0) && (
+                    {(hoverCard.pos.length > 0 || hoverCard.rmas > 0) && (
                       <div className="text-[11px] text-slate-500 border-t border-slate-100 pt-2 flex flex-col gap-1">
-                        {hoverCard.topBins.length > 0 && <p><span className="text-slate-400">Worked in</span> {hoverCard.topBins.map(([b, n]) => `${b} ×${n}`).join(" · ")}</p>}
                         {hoverCard.pos.length > 0 && <p><span className="text-slate-400">Booked in</span> {hoverCard.pos.slice(0, 6).join(", ")}{hoverCard.pos.length > 6 ? ` +${hoverCard.pos.length - 6}` : ""}</p>}
                         {hoverCard.rmas > 0 && <p><span className="text-slate-400">Returns desk</span> {hoverCard.rmas} RMA{hoverCard.rmas === 1 ? "" : "s"} received</p>}
                       </div>

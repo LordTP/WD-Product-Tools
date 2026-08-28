@@ -28,7 +28,7 @@ export interface PersonReport {
   rmas: number;
   shipped: number;
   teamActions: number;
-  narrative: string[];
+  narrative: Array<{ title: string; text: string }>;
 }
 
 /** Coarse activity family used to segment the day into sessions. */
@@ -123,30 +123,31 @@ export function personReport(day: WarehouseDay, name: string): PersonReport {
   const actions = evs.length + shipped;
 
   // ---- narrative ----
-  const n: string[] = [];
+  const n: Array<{ title: string; text: string }> = [];
+  const say = (title: string, text: string) => n.push({ title, text });
   const firstName = name.split(/\s+/)[0];
   if (first && last) {
-    n.push(`${firstName} was active from ${timeHM(first)} to ${timeHM(last)} — ${hourKeys.size} active hour${hourKeys.size === 1 ? "" : "s"}, ${actions} actions (${Math.round((actions / Math.max(1, teamActions)) * 100)}% of everything the team did).`);
+    say("On shift", `${firstName} was active from ${timeHM(first)} to ${timeHM(last)} — ${hourKeys.size} active hour${hourKeys.size === 1 ? "" : "s"}, ${actions} actions (${Math.round((actions / Math.max(1, teamActions)) * 100)}% of everything the team did).`);
   }
   const main = byType[0];
   if (main) {
     const parts: string[] = [];
-    if (main.type === "picked") parts.push(`mostly picking — ${main.count} picks for ${orders.size} order${orders.size === 1 ? "" : "s"} into ${totes.size} tote${totes.size === 1 ? "" : "s"}`);
-    else if (main.type === "received") parts.push(`mostly booking in — ${main.units} units across ${pos.size} PO${pos.size === 1 ? "" : "s"}`);
-    else if (main.type === "return-received") parts.push(`mostly on the returns desk — ${rmas.size} RMA${rmas.size === 1 ? "" : "s"} received (${main.units} units)`);
-    else if (main.type === "putaway") parts.push(`mostly putting away — ${main.units} units from receiving`);
-    else if (main.type === "return-slotted") parts.push(`mostly slotting returns — ${main.units} units into the returns wall`);
-    else parts.push(`mostly ${main.label.toLowerCase()} — ${main.count} actions, ${main.units} units`);
+    if (main.type === "picked") parts.push(`Mostly picking — ${main.count} picks for ${orders.size} order${orders.size === 1 ? "" : "s"} into ${totes.size} tote${totes.size === 1 ? "" : "s"}`);
+    else if (main.type === "received") parts.push(`Mostly booking in — ${main.units} units across ${pos.size} PO${pos.size === 1 ? "" : "s"}`);
+    else if (main.type === "return-received") parts.push(`Mostly on the returns desk — ${rmas.size} RMA${rmas.size === 1 ? "" : "s"} received (${main.units} units)`);
+    else if (main.type === "putaway") parts.push(`Mostly putting away — ${main.units} units from receiving`);
+    else if (main.type === "return-slotted") parts.push(`Mostly slotting returns — ${main.units} units into the returns wall`);
+    else parts.push(`Mostly ${main.label.toLowerCase()} — ${main.count} actions, ${main.units} units`);
     if (main.teamShare >= 0.5 && (teamByType.get(main.type) ?? 0) > 5) parts.push(`that's ${Math.round(main.teamShare * 100)}% of the team's ${main.label.toLowerCase()} today`);
-    n.push(`${parts.join("; ")}.`);
+    say("Main job", `${parts.join("; ")}.`);
   }
   const others = byType.slice(1, 3).filter((t) => t.count >= 3);
-  if (others.length) n.push(`Also ${others.map((t) => `${t.label.toLowerCase()} (${t.count})`).join(" and ")}.`);
-  if (shipped > 0) n.push(`Packed and shipped ${shipped} order${shipped === 1 ? "" : "s"}.`);
+  if (others.length) say("Also did", `${others.map((t) => `${t.label} (${t.count})`).join(" and ")}.`);
+  if (shipped > 0) say("Shipping", `Packed and shipped ${shipped} order${shipped === 1 ? "" : "s"}.`);
   const topArea = [...areas.entries()].sort((a, b) => b[1] - a[1])[0];
-  if (topArea && topArea[1] >= 5) n.push(`Spent most time in the ${topArea[0].toLowerCase()} area.`);
-  if (busiest && busiest.count >= 10) n.push(`Busiest hour ${String(busiest.hour).padStart(2, "0")}:00 with ${busiest.count} actions.`);
-  if (longestGap && longestGap.minutes >= 45) n.push(`Longest quiet stretch ${timeHM(longestGap.from)}–${timeHM(longestGap.to)} (${longestGap.minutes} min).`);
+  if (topArea && topArea[1] >= 5) say("Where", `Spent most time in the ${topArea[0].toLowerCase()} area.`);
+  if (busiest && busiest.count >= 10) say("Peak", `${String(busiest.hour).padStart(2, "0")}:00–${String(busiest.hour + 1).padStart(2, "0")}:00 was the busiest hour, ${busiest.count} actions.`);
+  if (longestGap && longestGap.minutes >= 45) say("Quiet spell", `Nothing logged ${timeHM(longestGap.from)}–${timeHM(longestGap.to)} (${longestGap.minutes} min) — break, packing, or off the scanner.`);
 
   return {
     name, actions, units, first, last, activeHours: hourKeys.size, byType, byHour,

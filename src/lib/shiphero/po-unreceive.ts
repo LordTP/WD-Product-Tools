@@ -75,9 +75,8 @@ export async function searchPo(poNumber: string): Promise<PoMatch[]> {
     });
 }
 
-/** Lines + live bin locations for every SKU on the PO. */
+/** Lines only — fast (one call). Bins are fetched lazily per SKU via skuBins(). */
 export async function poDetail(poId: string): Promise<PoDetail> {
-  const warehouseId = await getWarehouseId();
   const { data } = await shipheroGraphql<{
     purchase_order?: { data?: {
       id?: string; legacy_id?: number; po_number?: string; fulfillment_status?: string; po_date?: string | null;
@@ -88,24 +87,27 @@ export async function poDetail(poId: string): Promise<PoDetail> {
       line_items(first: 100) { edges { node { sku product_name quantity quantity_received } } } } } }`);
   const p = data.purchase_order?.data;
   if (!p) throw new Error("PO not found.");
-  const lines: PoLineDetail[] = [];
-  for (const e of p.line_items?.edges ?? []) {
-    const l = e.node;
-    if (!l?.sku) continue;
-    const { data: ld } = await shipheroGraphql<{
-      item_locations?: { data?: { edges?: Array<{ node?: { quantity?: number; location?: { id?: string; name?: string } | null } }> } };
-    }>(`query { item_locations(warehouse_id: "${q1(warehouseId)}", sku: "${q1(l.sku)}") { data(first: 30) { edges { node { quantity location { id name } } } } } }`);
-    const bins = (ld.item_locations?.data?.edges ?? [])
-      .map((x) => x.node)
-      .filter((b): b is NonNullable<typeof b> => Boolean(b && Number(b.quantity) > 0 && b.location?.id))
-      .map((b) => ({ locationId: b.location!.id!, locationName: b.location!.name ?? "?", qty: Number(b.quantity) }))
-      .sort((a, b) => (a.locationName === "Receiving" ? -1 : b.locationName === "Receiving" ? 1 : b.qty - a.qty));
-    lines.push({ sku: l.sku, productName: l.product_name ?? "", ordered: Number(l.quantity ?? 0), received: Number(l.quantity_received ?? 0), bins });
-  }
+  const lines: PoLineDetail[] = (p.line_items?.edges ?? [])
+    .map((e) => e.node)
+    .filter((l): l is NonNullable<typeof l> & { sku: string } => Boolean(l?.sku))
+    .map((l) => ({ sku: l.sku, productName: l.product_name ?? "", ordered: Number(l.quantity ?? 0), received: Number(l.quantity_received ?? 0), bins: [] }));
   return {
     id: p.id ?? poId, legacyId: String(p.legacy_id ?? ""), poNumber: p.po_number ?? "",
     status: p.fulfillment_status ?? "", vendor: p.vendor?.name ?? "", poDate: p.po_date ?? null, lines,
   };
+}
+
+/** Every bin currently holding a SKU (Receiving first, then by qty). One call. */
+export async function skuBins(sku: string): Promise<StockBin[]> {
+  const warehouseId = await getWarehouseId();
+  const { data } = await shipheroGraphql<{
+    item_locations?: { data?: { edges?: Array<{ node?: { quantity?: number; location?: { id?: string; name?: string } | null } }> } };
+  }>(`query { item_locations(warehouse_id: "${q1(warehouseId)}", sku: "${q1(sku)}") { data(first: 30) { edges { node { quantity location { id name } } } } } }`);
+  return (data.item_locations?.data?.edges ?? [])
+    .map((x) => x.node)
+    .filter((b): b is NonNullable<typeof b> => Boolean(b && Number(b.quantity) > 0 && b.location?.id))
+    .map((b) => ({ locationId: b.location!.id!, locationName: b.location!.name ?? "?", qty: Number(b.quantity) }))
+    .sort((a, b) => (a.locationName === "Receiving" ? -1 : b.locationName === "Receiving" ? 1 : b.qty - a.qty));
 }
 
 export interface UnreceiveLine {
