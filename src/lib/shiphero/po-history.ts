@@ -53,7 +53,7 @@ function cleanReason(r: string): string {
   return r
     .replace(/<[^>]+>/g, "")
     .replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
-    .replace(/\s*-\s*Product App\s*$/i, "")
+    .replace(/\s*-\s*Product App\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -106,7 +106,7 @@ export async function pullPoHistory(poId: string, extraSkus: string[] = []): Pro
 
   const raw: Array<RawChange & { sku: string }> = [];
   const queue = [...skus];
-  await Promise.all(Array.from({ length: 3 }, async () => {
+  await Promise.all(Array.from({ length: 5 }, async () => {
     while (queue.length) {
       const sku = queue.shift()!;
       const rows = await changesForSku(sku, dateFrom);
