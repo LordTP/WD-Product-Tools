@@ -120,7 +120,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
         </div>
         <div className="text-xs leading-tight min-w-0">
           <p className="text-slate-700 font-medium">Product team</p>
-          <p className="font-brand text-[15px] text-slate-500 tracking-tight">Wander Doll</p>
+          <p className="font-brand text-[15px] text-slate-500 tracking-tight">WANDERDOLL</p>
         </div>
         <button
           onClick={logout}
