@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-poppins);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-mono);
+  --font-brand: var(--font-brand);
 }
 
 html,
@@ -14,12 +15,13 @@ body {
   /* soft grey canvas so white cards/toolbars have contrast (not blinding white) */
   background: #e9edf2;
   color: #1e293b; /* slate-800 */
-  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv11", "ss01"; /* Inter: single-storey a / open shapes — closer to SF Pro */
 }
 
-/* Headings use Poppins Bold to match the team's Excel. */
+/* Headings: semibold Inter (700 looks heavy at UI sizes). */
 h1, h2, h3, h4 {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* Thin, Excel-ish scrollbars for the data grid */
