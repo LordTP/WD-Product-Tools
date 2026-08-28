@@ -12,6 +12,7 @@ import type { PoSummary, PoDetail, PoLineDetail } from "@/lib/shiphero/po-pull";
 import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
 import { ukDate } from "@/lib/shiphero/dates";
 import { parseDateRows, splitPaste } from "@/lib/po-dates-sheet";
+import { PoUnreceive } from "@/components/po-unreceive";
 
 interface PoDatesRow {
   orderSent: string | null;
@@ -995,6 +996,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
   const [hist, setHist] = useState<HistoryPayload | null>(null);
   const [histErr, setHistErr] = useState<string | null>(null);
   const [histLoading, setHistLoading] = useState(false);
+  const [unreceiveOpen, setUnreceiveOpen] = useState(false);
   const loadHistory = useCallback(async (refresh: boolean) => {
     if (!po.globalId) { setHistErr("This PO has no ShipHero id in the cache yet — run a Sync."); return; }
     setHistLoading(true); setHistErr(null);
@@ -1202,13 +1204,21 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
 
         <div className="px-5 py-3 border-t border-slate-200 flex items-center gap-2">
           {po.legacyId && <a href={`https://app.shiphero.com/dashboard/purchase-orders/details/${po.legacyId}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50">Open in ShipHero ↗</a>}
-          <a href={`/po-unreceive?po=${encodeURIComponent(po.poNumber)}`} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50">Un-receive…</a>
+          <button onClick={() => setUnreceiveOpen(true)} disabled={!shipheroConnected} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40" title="Take units off this PO's received counters (and out of stock)">Un-receive…</button>
           <button onClick={onRefresh} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" title="Re-pull this PO from ShipHero">Refresh</button>
           <div className="flex-1" />
           <button onClick={onPrev} disabled={!onPrev} className="text-xs px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Previous PO (←)">‹ Prev</button>
           <button onClick={onNext} disabled={!onNext} className="text-xs px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Next PO (→)">Next ›</button>
         </div>
       </aside>
+      {unreceiveOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-3 lg:p-8" onClick={() => { setUnreceiveOpen(false); onRefresh(); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => { setUnreceiveOpen(false); onRefresh(); }} className="absolute top-3.5 right-4 z-10 text-xs px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 bg-white" title="Close (the PO is re-read when you close)">Close ✕</button>
+            <PoUnreceive shipheroConnected={shipheroConnected} initialPo={po.poNumber} />
+          </div>
+        </div>
+      )}
     </>
   );
 }

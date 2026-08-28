@@ -90,7 +90,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
   }
 
   async function pick(m: PoMatch) {
-    setLoadingDetail(true); setError(null); setDetail(null); setRemovals({}); setResults(null);
+    setLoadingDetail(true); setError(null); setDetail(null); setRemovals({});
     try {
       const res = await fetch(`/api/po/unreceive/detail?id=${encodeURIComponent(m.id)}`);
       const j = await res.json();
@@ -175,10 +175,10 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
           {results && detail && (
             <div className="bg-white border border-emerald-200 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-4">
-                <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg">✓</span>
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center text-lg ${results.every((r) => r.ok) ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>{results.every((r) => r.ok) ? "✓" : "!"}</span>
                 <div>
-                  <h2 className="text-[15px] font-semibold text-slate-900">Applied to {detail.poNumber} — {results.filter((r) => r.ok).length}/{results.length} lines OK</h2>
-                  <p className="text-xs text-slate-500">Each change was re-read from ShipHero after it ran. The table below shows the PO as it is now.</p>
+                  <h2 className="text-[15px] font-semibold text-slate-900">{results.every((r) => r.ok) ? "Done" : "Partly done"} — {detail.poNumber}, {results.filter((r) => r.ok).length}/{results.length} line{results.length === 1 ? "" : "s"} OK</h2>
+                  <p className="text-xs text-slate-500">Each change was re-read from ShipHero after it ran.{results.some((r) => !r.ok) && <span className="text-rose-600 font-medium"> A line failed — its message is in the table; check ShipHero before retrying that size.</span>}</p>
                 </div>
               </div>
               <table className="w-full text-[13px]">
@@ -300,6 +300,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
                               b === "loading" || b === undefined ? <span className="text-xs text-slate-400">Finding stock…</span> :
                               b.length === 0 ? <span className="text-xs text-amber-600">No stock in any bin — counter only</span> : (
                                 <div className="flex flex-col gap-1.5">
+                                  {!b.some((x) => x.locationName === "Receiving") && <span className="text-[11px] text-amber-600">Nothing in Receiving for this size — pick the bin the extra unit is actually in, or leave stock at 0 (counter only).</span>}
                                   {b.map((bin) => (
                                     <label key={bin.locationId} className="flex items-center gap-2 text-xs">
                                       <input type="number" min={0} max={bin.qty} value={r?.stock[bin.locationId] || ""} placeholder="0" onChange={(e) => setStock(l, bin, Number(e.target.value))}
@@ -364,7 +365,9 @@ export function PoUnreceive({ shipheroConnected, initialPo = "" }: { shipheroCon
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-2">
+              {error && <p className="text-xs text-rose-600 flex-1">{error}</p>}
+              <div className="flex-1" />
               <button onClick={() => setReview(false)} className="text-sm px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Back</button>
               <button onClick={apply} disabled={applying} className="text-sm px-5 py-2 rounded-lg bg-rose-600 text-white font-medium disabled:opacity-40">{applying ? "Applying…" : "Confirm & apply"}</button>
             </div>
