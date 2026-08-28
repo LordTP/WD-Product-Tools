@@ -10,7 +10,8 @@ import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from "rea
 import Papa from "papaparse";
 import type { PoSummary, PoDetail, PoLineDetail } from "@/lib/shiphero/po-pull";
 import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
-import { normalizeSheetDate, ukDate } from "@/lib/shiphero/dates";
+import { ukDate } from "@/lib/shiphero/dates";
+import { parseDateRows, splitPaste } from "@/lib/po-dates-sheet";
 
 interface PoDatesRow {
   orderSent: string | null;
@@ -1230,7 +1231,22 @@ function PasteRevisionsModal({
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
+  const [uploaded, setUploaded] = useState<{ name: string; grid: string[][] } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
   const byNumber = new Map(pos.map((p) => [p.poNumber.toUpperCase(), p]));
+
+  async function upload(file: File) {
+    setUploading(true); setUploadErr(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const res = await fetch("/api/po/dates-sheet", { method: "POST", body: fd });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Couldn't read that file.");
+      setUploaded({ name: j.filename, grid: j.grid }); setText("");
+    } catch (e) { setUploadErr(e instanceof Error ? e.message : "Couldn't read that file."); }
+    finally { setUploading(false); }
+  }
 
   interface ParsedRow {
     poNumber: string;
@@ -1242,27 +1258,20 @@ function PasteRevisionsModal({
     oldExFactory: string | null;
   }
 
-  const rows: ParsedRow[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    const cells = line.split(/[\t,;]/).map((c) => c.trim()).filter((c) => c !== "");
-    if (cells.length < 2) continue;
-    if (/po number|purchase order/i.test(cells[0])) continue; // header row
-    const poNumber = cells[0];
-    const dates = cells.slice(1).map((c) => normalizeSheetDate(c)).filter((d): d is string => d !== null);
-    if (!dates.length) continue;
-    const match = byNumber.get(poNumber.toUpperCase());
+  // Same interpreter for paste and upload (see lib/po-dates-sheet).
+  const grid = uploaded ? uploaded.grid : splitPaste(text);
+  const parsed = parseDateRows(grid);
+  const rows: ParsedRow[] = parsed.rows.map((r) => {
+    const match = byNumber.get(r.poNumber.toUpperCase());
     const stored = match ? datesByPo[match.poNumber] : undefined;
-    const row: ParsedRow = {
-      poNumber: match?.poNumber ?? poNumber,
+    return {
+      poNumber: match?.poNumber ?? r.poNumber,
       known: Boolean(match),
+      orderSent: r.orderSent, exFactory: r.exFactory, delivery: r.delivery,
       oldDelivery: stored?.delivery ?? match?.poDate?.slice(0, 10) ?? null,
       oldExFactory: stored?.exFactory ?? null,
     };
-    if (dates.length === 1) row.delivery = dates[0];
-    else if (dates.length === 2) [row.exFactory, row.delivery] = dates;
-    else [row.orderSent, row.exFactory, row.delivery] = dates;
-    rows.push(row);
-  }
+  });
   const applicable = rows.filter((r) => r.known);
   const unknown = rows.filter((r) => !r.known);
 
@@ -1277,18 +1286,40 @@ function PasteRevisionsModal({
           <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>
         </div>
         <div className="p-5 overflow-y-auto flex flex-col gap-3">
-          <p className="text-xs text-slate-500">
-            Paste rows of <b>PO number + dates</b> (tab or comma separated, straight from Excel).
-            One date = new delivery · two = ex-factory, delivery · three = order sent, ex-factory, delivery.
-            UK dates (21/06/2026) are fine.
-          </p>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={6}
-            placeholder={"PO471\t10/06/2026\t21/06/2026\nPO472\t05/09/2026"}
-            className="w-full border border-slate-200 rounded-md p-2.5 font-mono text-xs focus:ring-1 focus:ring-indigo-300 outline-none"
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-dashed border-slate-300 rounded-lg p-3 flex flex-col gap-2 bg-slate-50/60">
+              <p className="text-xs font-semibold text-slate-800">Upload a sheet</p>
+              <p className="text-[11px] text-slate-500">.xlsx or .csv with the template columns — <b>PO Number · Order Sent · Ex-factory · Delivery (Expected)</b>. Fill in only what changed; blanks stay as they are.</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className={`text-xs px-3 py-1.5 rounded-md bg-indigo-600 text-white font-medium cursor-pointer hover:bg-indigo-700 ${uploading ? "opacity-60 pointer-events-none" : ""}`}>
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
+                  {uploading ? "Reading…" : "Choose file"}
+                </label>
+                <a href="/api/po/dates-template" className="text-[11px] text-indigo-700 hover:underline">Download template (.xlsx)</a>
+              </div>
+              {uploaded && (
+                <p className="text-[11px] text-emerald-700">
+                  <b>{uploaded.name}</b> · {Math.max(0, uploaded.grid.length - 1)} row{uploaded.grid.length === 2 ? "" : "s"}
+                  <button onClick={() => setUploaded(null)} className="ml-2 text-slate-400 hover:text-slate-700">clear</button>
+                </p>
+              )}
+              {uploadErr && <p className="text-[11px] text-rose-600">{uploadErr}</p>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-slate-800">…or paste rows</p>
+              <p className="text-[11px] text-slate-500">Straight from Excel. With the header row, columns are matched by name. Without one: 1 date = delivery · 2 = ex-factory, delivery · 3 = order sent, ex-factory, delivery. UK dates (21/06/2026) are fine.</p>
+              <textarea
+                value={text}
+                onChange={(e) => { setText(e.target.value); setUploaded(null); }}
+                rows={5}
+                placeholder={"PO Number\tOrder Sent\tEx-factory\tDelivery (Expected)\nPO471\t\t10/06/2026\t21/06/2026\nPO472\t\t\t05/09/2026"}
+                className="w-full border border-slate-200 rounded-md p-2.5 font-mono text-xs focus:ring-1 focus:ring-indigo-300 outline-none flex-1"
+              />
+            </div>
+          </div>
+          {rows.length > 0 && (
+            <p className="text-[11px] text-slate-400">{parsed.mode === "columns" ? "Header row found — dates matched by column name." : "No header row — dates read in order."} {rows.length} row{rows.length === 1 ? "" : "s"}.</p>
+          )}
           {unknown.length > 0 && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
               Not in the PO cache (will be skipped): {unknown.map((r) => r.poNumber).join(", ")}
@@ -1302,6 +1333,7 @@ function PasteRevisionsModal({
                     <th className="px-3 py-1.5 font-medium">PO</th>
                     <th className="px-3 py-1.5 font-medium">Delivery</th>
                     <th className="px-3 py-1.5 font-medium">Ex-factory</th>
+                    <th className="px-3 py-1.5 font-medium">Order sent</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1332,6 +1364,7 @@ function PasteRevisionsModal({
                           <span className="text-slate-300">unchanged</span>
                         )}
                       </td>
+                      <td className="px-3 py-1.5">{r.orderSent ? <span className="font-medium text-slate-700">{ukDate(r.orderSent)}</span> : <span className="text-slate-300">unchanged</span>}</td>
                     </tr>
                   ))}
                 </tbody>
