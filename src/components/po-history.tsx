@@ -66,10 +66,10 @@ function shiftIso(iso: string, days: number): string {
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-const isClosedStatus = (s: string) => /close|cancel/i.test(s); // Open / Closed views
-// Delivered POs are still "open" (being booked in) but the stock has arrived, so
-// their expected date is history, not lateness.
-const isDoneStatus = (s: string) => /deliver|close|cancel/i.test(s);
+// Delivered = booked in at Wander Doll, so it counts as finished alongside
+// closed/cancelled: Closed view, no lateness, no missing-date nagging.
+const isClosedStatus = (s: string) => /deliver|close|cancel/i.test(s);
+const isDoneStatus = isClosedStatus;
 
 type Tone = "late" | "soon" | "missing" | "";
 function rel(iso: string | null, closed: boolean): { text: string; tone: Tone } {
