@@ -225,7 +225,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
   const [familyF, setFamilyF] = useState<string | null>(null);
   const [missingOnly, setMissingOnly] = useState(false);
   const [overOnly, setOverOnly] = useState(false);
-  const [groupByVendor, setGroupByVendor] = useState(false);
+  const [groupByVendor, setGroupByVendor] = useState(true); // merch team think in suppliers
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set()); // vendor groups folded away
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "expected", dir: 1 });
   const lastTick = useRef<string | null>(null);
