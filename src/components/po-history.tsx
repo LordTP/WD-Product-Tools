@@ -66,7 +66,10 @@ function shiftIso(iso: string, days: number): string {
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-const isClosedStatus = (s: string) => /close|cancel/i.test(s);
+const isClosedStatus = (s: string) => /close|cancel/i.test(s); // Open / Closed views
+// Delivered POs are still "open" (being booked in) but the stock has arrived, so
+// their expected date is history, not lateness.
+const isDoneStatus = (s: string) => /deliver|close|cancel/i.test(s);
 
 type Tone = "late" | "soon" | "missing" | "";
 function rel(iso: string | null, closed: boolean): { text: string; tone: Tone } {
@@ -337,9 +340,9 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
 
   // ---- derived ----
   const expectedOf = useCallback((p: PoSummary) => datesByPo[p.poNumber]?.delivery ?? p.poDate?.slice(0, 10) ?? null, [datesByPo]);
-  const isLate = useCallback((p: PoSummary) => { const e = expectedOf(p); return !isClosedStatus(p.status) && !!e && daysFrom(e) < 0; }, [expectedOf]);
+  const isLate = useCallback((p: PoSummary) => { const e = expectedOf(p); return !isDoneStatus(p.status) && !!e && daysFrom(e) < 0; }, [expectedOf]);
   const isOver = (p: PoSummary) => p.unitsReceived > p.unitsOrdered;
-  const isMissing = useCallback((p: PoSummary) => !isClosedStatus(p.status) && (!datesByPo[p.poNumber]?.exFactory || !expectedOf(p)), [datesByPo, expectedOf]);
+  const isMissing = useCallback((p: PoSummary) => !isDoneStatus(p.status) && (!datesByPo[p.poNumber]?.exFactory || !expectedOf(p)), [datesByPo, expectedOf]);
 
   const all = useMemo(() => pos ?? [], [pos]);
   const inView = useMemo(() => all.filter((p) => view === "all" || (view === "closed") === isClosedStatus(p.status)), [all, view]);
@@ -363,7 +366,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
       if (windowF) {
         const e = expectedOf(p);
         const d = e ? daysFrom(e) : null;
-        if (windowF === "unset" ? !!e : windowF === "overdue" ? !(d != null && d < 0 && !isClosedStatus(p.status)) : !(d != null && d >= 0 && d <= (windowF === "week" ? 7 : Number(windowF)))) return false;
+        if (windowF === "unset" ? !!e : windowF === "overdue" ? !(d != null && d < 0 && !isDoneStatus(p.status)) : !(d != null && d >= 0 && d <= (windowF === "week" ? 7 : Number(windowF)))) return false;
       }
       if (q) {
         const hay = [p.poNumber, p.legacyId ?? "", p.vendorName ?? "", p.status, ...p.products].join(" ").toLowerCase();
@@ -553,7 +556,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
           {tiles.map(([status, rows]) => {
             const t = totals(rows);
             const on = statusF === status;
-            const closed = isClosedStatus(status);
+            const closed = isDoneStatus(status);
             return (
               <button key={status} onClick={() => { setStatusF(on ? null : status); setLateOnly(false); }}
                 className={`text-left bg-white border rounded-xl px-3 py-2.5 flex flex-col gap-0.5 transition-colors ${on ? "border-indigo-500 ring-2 ring-indigo-100" : "border-slate-200 hover:border-slate-300"}`}>
@@ -618,8 +621,8 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap }: { shipheroCo
                   <input type="checkbox" title="Select all visible" className="accent-indigo-600 cursor-pointer" checked={filtered.length > 0 && filtered.every((p) => selected.has(p.poNumber))}
                     onChange={(e) => setSelected((prev) => { const next = new Set(prev); for (const p of filtered) { if (e.target.checked) next.add(p.poNumber); else next.delete(p.poNumber); } return next; })} />
                 </th>
-                {th("PO", "po")}{th("Product", "product")}{th("Vendor", "vendor")}{th("Status", "status")}{th("Received / ordered", "progress")}
-                {th("Order sent", "sent")}{th("Ex-factory", "exf")}{th("Expected", "expected")}{th("Value", "value", "text-right")}
+                {th("PO", "po", "w-[112px]")}{th("Product", "product")}{th("Vendor", "vendor", "w-[210px]")}{th("Status", "status", "w-[150px]")}{th("Received / ordered", "progress", "w-[230px]")}
+                {th("Order sent", "sent", "w-[118px]")}{th("Ex-factory", "exf", "w-[118px]")}{th("Expected", "expected", "w-[124px]")}{th("Value", "value", "text-right w-[100px]")}
               </tr>
             </thead>
             <tbody>
@@ -822,7 +825,7 @@ function GroupRows({ group, totals, selected, openPo, datesByPo, expectedOf, onO
 function PoRow({ po, dates, expected, checked, open, onOpen, onToggle }: {
   po: PoSummary; dates: PoDatesRow | undefined; expected: string | null; checked: boolean; open: boolean; onOpen: () => void; onToggle: (shift: boolean) => void;
 }) {
-  const closed = isClosedStatus(po.status);
+  const closed = isDoneStatus(po.status);
   const over = po.unitsReceived > po.unitsOrdered;
   const pct = po.unitsOrdered ? Math.min(100, (po.unitsReceived / po.unitsOrdered) * 100) : 0;
   const bar = over ? "bg-rose-500" : po.unitsReceived >= po.unitsOrdered && po.unitsOrdered > 0 ? "bg-emerald-500" : po.unitsReceived > 0 ? "bg-indigo-500" : "bg-slate-200";
@@ -882,7 +885,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
   onNext?: () => void;
 }) {
   const loaded = detail && detail !== "loading" && !("error" in detail) ? (detail as PoDetail) : null;
-  const closed = isClosedStatus(po.status);
+  const closed = isDoneStatus(po.status);
   const expected = dates?.delivery ?? po.poDate?.slice(0, 10) ?? "";
 
   // dates (three fields; expected writes ShipHero via the parent's confirm)
