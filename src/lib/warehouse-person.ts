@@ -103,8 +103,10 @@ export function personReport(day: WarehouseDay, name: string): PersonReport {
   // drop tiny blips between bigger sessions (a single stray move) — merge into neighbours' story by keeping only ≥3 or standalone
   const meaningful = sessions.filter((s, i) => s.count >= 3 || sessions.length <= 3 || i === 0 || i === sessions.length - 1);
 
-  let busiest: PersonReport["busiestHour"] = null;
-  byHour.forEach((c, h) => { if (c > 0 && (!busiest || c > busiest.count)) busiest = { hour: h, count: c }; });
+  const busiest: PersonReport["busiestHour"] = byHour.reduce<PersonReport["busiestHour"]>(
+    (best, c, h) => (c > 0 && (!best || c > best.count) ? { hour: h, count: c } : best),
+    null,
+  );
 
   let longestGap: PersonReport["longestGap"] = null;
   for (let i = 1; i < evs.length; i++) {
