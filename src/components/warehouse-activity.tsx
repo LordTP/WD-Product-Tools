@@ -226,7 +226,7 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                         ["Orders picked", hoverCard.ordersPicked],
                         ["Totes", hoverCard.totes],
                         ["SKUs", hoverCard.skus],
-                        ["Bins", hoverCard.bins],
+                        ["Bins touched", hoverCard.bins],
                         ["Shipped", hoverCard.shipped],
                       ].filter(([, v]) => Number(v) > 0).slice(0, 6).map(([l, v]) => (
                         <div key={String(l)} className="bg-slate-50 rounded-md px-2 py-1.5">

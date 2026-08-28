@@ -105,8 +105,8 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   <Icon className={`${item.sub ? "w-3.5 h-3.5" : "w-4 h-4"} shrink-0`} />
                   <span className="truncate">{item.label}</span>
                   {item.soon && (
-                    <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-1.5 py-0.5 leading-none">
-                      soon
+                    <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-1.5 py-0.5 leading-none whitespace-nowrap">
+                      coming soon
                     </span>
                   )}
                 </Link>

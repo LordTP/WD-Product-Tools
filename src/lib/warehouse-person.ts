@@ -145,7 +145,13 @@ export function personReport(day: WarehouseDay, name: string): PersonReport {
   if (others.length) say("Also did", `${others.map((t) => `${t.label} (${t.count})`).join(" and ")}.`);
   if (shipped > 0) say("Shipping", `Packed and shipped ${shipped} order${shipped === 1 ? "" : "s"}.`);
   const topArea = [...areas.entries()].sort((a, b) => b[1] - a[1])[0];
-  if (topArea && topArea[1] >= 5) say("Where", `Spent most time in the ${topArea[0].toLowerCase()} area.`);
+  const topBin = [...bins.entries()].sort((a, b) => b[1] - a[1])[0];
+  const binShare = topBin ? topBin[1] / Math.max(1, evs.length) : 0;
+  if (topArea && topArea[1] >= 5) {
+    say("Where", binShare >= 0.6
+      ? `Spent most time in the ${topArea[0].toLowerCase()} area — almost everything went through ${topBin[0]} (${bins.size} bin${bins.size === 1 ? "" : "s"} touched all day).`
+      : `Spent most time in the ${topArea[0].toLowerCase()} area, across ${bins.size} bin${bins.size === 1 ? "" : "s"}.`);
+  }
   if (busiest && busiest.count >= 10) say("Peak", `${String(busiest.hour).padStart(2, "0")}:00–${String(busiest.hour + 1).padStart(2, "0")}:00 was the busiest hour, ${busiest.count} actions.`);
   if (longestGap && longestGap.minutes >= 45) say("Quiet spell", `Nothing logged ${timeHM(longestGap.from)}–${timeHM(longestGap.to)} (${longestGap.minutes} min) — break, packing, or off the scanner.`);
 
