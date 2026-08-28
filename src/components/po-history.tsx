@@ -713,7 +713,7 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
                   <input type="checkbox" title="Select all visible" className="accent-indigo-600 cursor-pointer" checked={filtered.length > 0 && filtered.every((p) => selected.has(p.poNumber))}
                     onChange={(e) => setSelected((prev) => { const next = new Set(prev); for (const p of filtered) { if (e.target.checked) next.add(p.poNumber); else next.delete(p.poNumber); } return next; })} />
                 </th>
-                {th("PO", "po", "w-[112px]")}{th("Product", "product")}{th("Vendor", "vendor", "w-[210px]")}{th("Status", "status", "w-[150px]")}{th("Received / ordered", "progress", "w-[230px]")}
+                {th("PO", "po", "w-[112px]")}{th("Product", "product")}{th("Vendor", "vendor", "w-[110px]")}{th("Status", "status", "w-[150px]")}{th("Received / ordered", "progress", "w-[230px]")}
                 {th("Order sent", "sent", "w-[118px]")}{th("Ex-factory", "exf", "w-[118px]")}{th("Expected", "expected", "w-[124px]")}{th("Value", "value", "text-right w-[100px]")}
               </tr>
             </thead>
@@ -946,9 +946,7 @@ function PoRow({ po, dates, expected, checked, open, onOpen, onToggle }: {
           </span>
         </>) : <span className="text-slate-300">—</span>}
       </td>
-      <td className="px-3 py-2.5 border-b border-slate-100 text-[13px] text-slate-700 max-w-[200px]">
-        {v.short}{v.full && <span className="block text-[10.5px] text-slate-400 truncate" title={v.full}>{v.full}</span>}
-      </td>
+      <td className="px-3 py-2.5 border-b border-slate-100 text-[13px] text-slate-700 whitespace-nowrap" title={v.full || undefined}>{v.short}</td>
       <td className="px-3 py-2.5 border-b border-slate-100 whitespace-nowrap">
         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusClass(po.status)}`}><span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{po.status || "—"}</span>
       </td>
