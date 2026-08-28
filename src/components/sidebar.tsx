@@ -30,6 +30,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // Hidden for now — Swap QC returns export not ready for the team yet.
       // { href: "/returns", label: "Returns", icon: ReturnIcon },
       { href: "/products", label: "Products → Shopify", icon: ProductIcon },
+      { href: "/reports", label: "Reports", icon: ReportIcon, soon: true },
     ],
   },
   {
@@ -88,8 +89,9 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                 <Link
                   key={item.href}
                   href={item.soon ? "#" : item.href}
-                  onClick={onNavigate}
+                  onClick={(e) => { if (item.soon) { e.preventDefault(); return; } onNavigate?.(); }}
                   aria-disabled={item.soon}
+                  title={item.soon ? "Coming soon" : undefined}
                   className={`flex items-center gap-2.5 py-2 rounded-md text-sm mb-0.5 transition-colors ${
                     item.sub ? "pl-8 pr-3" : "px-3"
                   } ${
@@ -103,7 +105,7 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
                   <Icon className={`${item.sub ? "w-3.5 h-3.5" : "w-4 h-4"} shrink-0`} />
                   <span className="truncate">{item.label}</span>
                   {item.soon && (
-                    <span className="ml-auto text-[9px] uppercase tracking-wide text-slate-300">
+                    <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-1.5 py-0.5 leading-none">
                       soon
                     </span>
                   )}
@@ -164,6 +166,13 @@ function ProductIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M20 7 12 3 4 7v10l8 4 8-4z" />
       <path d="M4 7l8 4 8-4M12 11v10" />
+    </svg>
+  );
+}
+function ReportIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
     </svg>
   );
 }
