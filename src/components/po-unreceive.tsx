@@ -35,6 +35,12 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
   const binsRef = useRef<Record<string, BinsState>>({});
   binsRef.current = bins;
 
+  // Deep link from PO History: /po-unreceive?po=PO510 → prefill and search.
+  useEffect(() => {
+    const po = new URLSearchParams(window.location.search).get("po");
+    if (po) { setQuery(po); search(po); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- data ----
   const fetchBins = useCallback(async (sku: string) => {
     if (binsRef.current[sku]) return;
@@ -59,11 +65,11 @@ export function PoUnreceive({ shipheroConnected }: { shipheroConnected: boolean 
     return () => { cancelled = true; };
   }, [detail, fetchBins]);
 
-  async function search() {
-    if (!query.trim()) return;
+  async function search(value: string = query) {
+    if (!value.trim()) return;
     setSearching(true); setError(null); setMatches(null); setDetail(null); setResults(null); setRemovals({}); setBins({});
     try {
-      const res = await fetch(`/api/po/unreceive/search?po=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/po/unreceive/search?po=${encodeURIComponent(value.trim())}`);
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Search failed.");
       setMatches(j.matches);
