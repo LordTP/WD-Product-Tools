@@ -276,7 +276,13 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
     const sku = o.skus[0];
     if (!sku) continue;
     const size = deriveSizeFromSku(sku, sizeMap);
-    const name = (o.items.split(",")[0] ?? sku).replace(/\s*×\d+$/, "");
+    // ShipHero product names often end in "- <size>" and sometimes carry an
+    // internal "Note …" suffix — strip both so the grouping label reads clean.
+    const name = (o.items.split(",")[0] ?? sku)
+      .replace(/\s*×\d+$/, "")
+      .replace(/\s*Note\b.*$/i, "")
+      .replace(/\s*[-–]\s*(XXS|XS|S|M|L|XL|XXL)\s*$/i, "")
+      .trim();
     const key = size ? `${name} · ${size}` : name;
     const g = prodMap.get(key) ?? { orders: 0, skus: new Set<string>() };
     g.orders += 1; g.skus.add(sku); prodMap.set(key, g);
