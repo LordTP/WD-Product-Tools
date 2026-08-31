@@ -64,7 +64,7 @@ export interface BlockedProduct {
   incomingDate: string | null; // YYYY-MM-DD expected
   note: string | null; // e.g. "no open PO covers this"
 }
-export interface CountryRow { country: string; open: number }
+export interface CountryRow { country: string; open: number; shipped?: number }
 
 /**
  * Collapse a shipping method/carrier/title into a service bucket. Used for the

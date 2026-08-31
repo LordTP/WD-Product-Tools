@@ -106,6 +106,7 @@ export interface ShipScanState {
   byService: Record<string, { count: number; units: number }>;
   byLane: Record<string, { count: number; units: number }>;
   byHour?: number[]; // London hours 0–23
+  byCountry?: Record<string, number>;
 }
 
 // Most orders are 1–3 lines, and ShipHero prices a query by what you ASK for
@@ -125,8 +126,12 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
   const state: ShipScanState =
     prev && prev.date === today
       ? { ...prev, seen: [...prev.seen], byService: { ...prev.byService }, byLane: { ...prev.byLane } }
-      : { date: today, cursor: null, seen: [], orders: 0, units: 0, byService: {}, byLane: {}, byHour: Array.from({ length: 24 }, () => 0) };
+      : { date: today, cursor: null, seen: [], orders: 0, units: 0, byService: {}, byLane: {}, byHour: Array.from({ length: 24 }, () => 0), byCountry: {} };
   state.byHour = state.byHour ?? Array.from({ length: 24 }, () => 0);
+  if (!state.byCountry) {
+    // Snapshot predates country tracking — rescan the whole day once to backfill.
+    state.cursor = null; state.seen = []; state.orders = 0; state.units = 0; state.byService = {}; state.byLane = {}; state.byHour = Array.from({ length: 24 }, () => 0); state.byCountry = {};
+  }
   const seen = new Set(state.seen);
   const from = state.cursor
     ? new Date(new Date(`${state.cursor}Z`).getTime() - 15 * 60_000).toISOString().slice(0, 19)
@@ -139,7 +144,7 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
     const query = `query { shipments(date_from: "${q1(from)}", voided: false) {
       data(first: 40${afterArg}) { pageInfo { hasNextPage endCursor }
         edges { node { id legacy_id created_date
-          order { shipping_lines { method carrier title } }
+          order { shipping_lines { method carrier title } shipping_address { country } }
           line_items(first: ${NESTED_LINES}) { edges { node { quantity } } } } } } } }`;
     const { data } = await shipheroGraphql<{
       shipments?: {
@@ -147,7 +152,7 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
           edges?: Array<{
             node?: {
               id?: string; legacy_id?: number; created_date?: string | null;
-              order?: { shipping_lines?: { method?: string | null; carrier?: string | null; title?: string | null } | null } | null;
+              order?: { shipping_lines?: { method?: string | null; carrier?: string | null; title?: string | null } | null; shipping_address?: { country?: string | null } | null } | null;
               line_items?: { edges?: Array<{ node?: { quantity?: number } }> };
             };
           }>;
@@ -164,6 +169,8 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
       seen.add(key);
       if (n.created_date && (!state.cursor || n.created_date > state.cursor)) state.cursor = n.created_date;
       if (n.created_date) state.byHour![ukHour(n.created_date)] += 1;
+      const cc = n.order?.shipping_address?.country || "?";
+      state.byCountry![cc] = (state.byCountry![cc] ?? 0) + 1;
       let qtys = (n.line_items?.edges ?? []).map((x) => Number(x.node?.quantity || 0));
       if (qtys.length === NESTED_LINES && n.id) {
         // Cap hit — this might be a big multi. Pull its full lines so units are exact.
@@ -294,10 +301,15 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
       return { product, orders: g.orders, incomingPo: hit?.po ?? null, incomingDate: hit?.date ?? null, note: hit ? null : "no open PO covers this" };
     });
 
-  // destination mix (open orders)
-  const geo = new Map<string, number>();
-  for (const o of openOrders) geo.set(o.country, (geo.get(o.country) ?? 0) + 1);
-  const countries: CountryRow[] = [...geo.entries()].map(([country, open]) => ({ country, open })).sort((a, b) => b.open - a.open).slice(0, 8);
+  // destination mix: open orders + shipped today, merged
+  const geo = new Map<string, { open: number; shipped: number }>();
+  const geoRow = (cc: string) => { let g = geo.get(cc); if (!g) { g = { open: 0, shipped: 0 }; geo.set(cc, g); } return g; };
+  for (const o of openOrders) geoRow(o.country).open += 1;
+  for (const [cc, n] of Object.entries(shipped.byCountry ?? {})) geoRow(cc).shipped += n;
+  const countries: CountryRow[] = [...geo.entries()]
+    .map(([country, g]) => ({ country, open: g.open, shipped: g.shipped }))
+    .sort((a, b) => (b.open + (b.shipped ?? 0)) - (a.open + (a.shipped ?? 0)))
+    .slice(0, 8);
 
   const asLanes = (m: Map<string, number>): LaneCount[] =>
     [...m.entries()].map(([lane, c]) => ({ lane, count: c })).sort((a, b) => b.count - a.count);

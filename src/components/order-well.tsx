@@ -122,9 +122,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
   const readySingles = lanes.reduce((a, l) => a + l.singles, 0);
   const readyMultis = lanes.reduce((a, l) => a + l.multis, 0);
   const maxReady = Math.max(1, ...lanes.map((l) => l.ready));
-  const maxCountry = Math.max(1, ...(stats?.countries ?? []).map((c) => c.open));
   const byHour = stats?.shippedByHour ?? [];
-  const maxHour = Math.max(1, ...byHour);
   const bucket = buckets[ageSel] ?? buckets[buckets.length - 1];
   const asOf = stats ? ukHM(stats.syncedAt) : "—";
 
@@ -247,31 +245,34 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
               </Panel>
 
               {/* countries */}
-              <Panel title="Open orders — where they're going">
-                <div className="flex flex-col gap-2">
-                  {(stats.countries ?? []).map((c) => (
-                    <div key={c.country} className="grid grid-cols-[110px_1fr_52px] gap-2 items-center text-xs">
-                      <span className="text-slate-700 truncate">{countryLabel(c.country)}</span>
-                      <span className="h-2.5 bg-slate-100 rounded overflow-hidden"><i className="block h-full bg-indigo-500 rounded" style={{ width: `${(c.open / maxCountry) * 100}%` }} /></span>
-                      <span className="text-right font-mono text-slate-600">{c.open}</span>
-                    </div>
-                  ))}
+              <Panel title="Where orders are going" legend={[["bg-indigo-600", "shipped today"], ["bg-indigo-200", "still open"]]}>
+                <div className="flex flex-col gap-2.5">
+                  {(stats.countries ?? []).map((c) => {
+                    const shippedN = c.shipped ?? 0;
+                    const maxBoth = Math.max(1, ...(stats.countries ?? []).map((x) => x.open + (x.shipped ?? 0)));
+                    return (
+                      <div key={c.country} className="grid grid-cols-[112px_1fr_92px] gap-2 items-center text-xs">
+                        <span className="text-slate-700 truncate">{countryLabel(c.country)}</span>
+                        <span className="h-3 bg-slate-100 rounded overflow-hidden flex">
+                          <i className="block h-full bg-indigo-600" style={{ width: `${(shippedN / maxBoth) * 100}%` }} />
+                          <i className="block h-full bg-indigo-200" style={{ width: `${(c.open / maxBoth) * 100}%` }} />
+                        </span>
+                        <span className="text-right font-mono text-slate-700 whitespace-nowrap">{shippedN}<span className="text-slate-400 font-sans"> + {c.open} open</span></span>
+                      </div>
+                    );
+                  })}
                 </div>
+                <p className="text-[10.5px] text-slate-400 mt-3 border-t border-slate-100 pt-2">
+                  International open: {lanes.filter((l) => /international/i.test(l.family)).map((l) => `${l.family.replace(/international\s*[-–]\s*/i, "")} ${l.ready + l.blocked}`).join(" · ") || "none"} · shipped today {stats.shippedOrders} orders to {(stats.countries ?? []).filter((c) => (c.shipped ?? 0) > 0).length} countries
+                </p>
               </Panel>
 
               {/* pace */}
-              <Panel title="Today's pace — orders shipped per hour">
-                <div className="flex items-end gap-1 h-24">
-                  {Array.from({ length: 11 }, (_, i) => i + 7).map((h) => (
-                    <div key={h} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full" title={`${String(h).padStart(2, "0")}:00 — ${byHour[h] ?? 0} orders`}>
-                      <span className="font-mono text-[10px] text-slate-500">{byHour[h] || ""}</span>
-                      <i className="block w-full rounded-t bg-indigo-500" style={{ height: `${Math.max(2, ((byHour[h] ?? 0) / maxHour) * 100)}%` }} />
-                      <span className="text-[9.5px] text-slate-400">{h}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10.5px] text-slate-400 mt-1.5">London hours · from today&apos;s shipment scan.</p>
+              <Panel title="Today's pace — orders shipped per hour" legend={[["bg-indigo-500", "shipped"], ["border-t-2 border-dashed border-rose-400 bg-transparent", "needed rate"]]}>
+                <PacePanel byHour={byHour} cuts={cuts} shippedOrders={stats.shippedOrders} />
               </Panel>
+
+
             </div>
 
             <p className="text-[11px] text-slate-400">
@@ -337,12 +338,65 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string | numbe
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, legend, children }: { title: string; legend?: Array<[string, string]>; children: React.ReactNode }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 min-w-0">
-      <p className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium mb-2.5">{title}</p>
+      <div className="flex items-center mb-2.5">
+        <p className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium">{title}</p>
+        <div className="flex-1" />
+        {legend && (
+          <span className="flex gap-3 text-[10.5px] text-slate-500">
+            {legend.map(([cls, label]) => (
+              <span key={label} className="inline-flex items-center gap-1.5"><i className={`inline-block w-3 h-2 rounded-[2px] ${cls}`} />{label}</span>
+            ))}
+          </span>
+        )}
+      </div>
       {children}
     </div>
+  );
+}
+
+/** Hourly bars with a dashed "needed rate" line (due-today ÷ hours to the last
+ *  van), plus the day's summary — total, average over active hours, peak. */
+function PacePanel({ byHour, cuts, shippedOrders }: { byHour: number[]; cuts: CutoffView[]; shippedOrders: number }) {
+  const hours = Array.from({ length: 13 }, (_, i) => i + 7); // 07–19
+  const active = byHour.filter((v) => v > 0);
+  const avg = active.length ? Math.round(byHour.reduce((a, v) => a + v, 0) / active.length) : 0;
+  const peakHour = byHour.reduce((best, v, h) => (v > (byHour[best] ?? 0) ? h : best), 0);
+  // target = whichever open carrier demands the highest rate right now
+  const need = Math.max(0, ...cuts.filter((c) => c.needPerHour !== null && c.ordersLeft > 0).map((c) => c.needPerHour ?? 0));
+  const max = Math.max(1, ...hours.map((h) => byHour[h] ?? 0), need);
+  return (
+    <>
+      <div className="relative h-36">
+        {need > 0 && (
+          <div className="absolute left-0 right-0 border-t-2 border-dashed border-rose-400 z-10" style={{ bottom: `${(need / max) * 82 + 14}%` }}>
+            <span className="absolute right-0 -top-4 text-[10px] font-mono text-rose-500">need {need}/h</span>
+          </div>
+        )}
+        <div className="flex items-end gap-1.5 h-full pt-4 pb-5">
+          {hours.map((h) => (
+            <div key={h} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full" title={`${String(h).padStart(2, "0")}:00 — ${byHour[h] ?? 0} orders`}>
+              {(byHour[h] ?? 0) > 0 && <span className="font-mono text-[10px] text-slate-600">{byHour[h]}</span>}
+              <i className={`block w-full rounded-t ${h === peakHour && (byHour[h] ?? 0) > 0 ? "bg-indigo-700" : "bg-indigo-500"}`} style={{ height: `${Math.max(2, ((byHour[h] ?? 0) / max) * 100)}%` }} />
+            </div>
+          ))}
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 flex gap-1.5">
+          {hours.map((h) => <span key={h} className="flex-1 text-center text-[9.5px] text-slate-400">{h}</span>)}
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-3 border-t border-slate-100 pt-2.5">
+        {[["Shipped", `${shippedOrders}`], ["Avg / active hour", `${avg}`], ["Peak", byHour[peakHour] ? `${String(peakHour).padStart(2, "0")}:00 · ${byHour[peakHour]}` : "—"]].map(([l, v]) => (
+          <div key={l}>
+            <p className="text-[9.5px] uppercase tracking-wider text-slate-400">{l}</p>
+            <p className="font-mono text-sm font-semibold text-slate-800">{v}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10.5px] text-slate-400 mt-2">London hours · dashed line = rate needed to clear due-today before the last van.</p>
+    </>
   );
 }
 
