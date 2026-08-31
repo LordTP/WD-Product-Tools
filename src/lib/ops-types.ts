@@ -27,7 +27,44 @@ export interface OpsStats {
   /** Incremental shipped-today accumulator (internal — lets the next sync pull
    *  only shipments newer than the cursor). Shape owned by ops-pull. */
   shipScan?: unknown;
+  /** v2 (Order Well redraw) — all derived from the same scan. */
+  lanes?: LaneRow[];
+  ageBuckets?: AgeBucket[];
+  blockedProducts?: BlockedProduct[];
+  countries?: CountryRow[];
+  shippedByHour?: number[]; // London hours 0–23, today
+  oldestReady?: { orderNumber: string; ageDays: number; lane: string } | null;
 }
+
+export interface LaneRow {
+  family: string;
+  ready: number;
+  singles: number;
+  multis: number;
+  dueToday: number;
+  blocked: number;
+  oldestReadyDays: number | null;
+}
+export interface OrderLite {
+  orderNumber: string;
+  legacyId: string;
+  items: string; // "RAYNE MAXI S ×1 +2 more"
+  lane: string;
+  ageDays: number;
+}
+export interface AgeBucket {
+  label: string; // "< 1 day"
+  count: number;
+  orders: OrderLite[]; // oldest first, capped
+}
+export interface BlockedProduct {
+  product: string;
+  orders: number;
+  incomingPo: string | null;
+  incomingDate: string | null; // YYYY-MM-DD expected
+  note: string | null; // e.g. "no open PO covers this"
+}
+export interface CountryRow { country: string; open: number }
 
 /**
  * Collapse a shipping method/carrier/title into a service bucket. Used for the

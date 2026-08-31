@@ -21,6 +21,19 @@ export async function getOpsStats(): Promise<OpsStats | null> {
   }
 }
 
+// One in-flight sync at a time; warm() returns the cache instantly and
+// refreshes in the background when it's older than minAgeMs (TV keep-warm).
+let inflight: Promise<OpsStats> | null = null;
+export async function warmOpsStats(minAgeMs = 150_000): Promise<OpsStats | null> {
+  const cur = await getOpsStats();
+  const fresh = cur && Date.now() - new Date(cur.syncedAt).getTime() < minAgeMs;
+  if (!fresh && !inflight) {
+    inflight = syncOpsStats().finally(() => { inflight = null; });
+    inflight.catch(() => undefined); // background failure surfaces on next manual sync
+  }
+  return cur;
+}
+
 export async function syncOpsStats(): Promise<OpsStats> {
   const prev = await getOpsStats();
   const computed = await computeOpsStats(prev?.shipScan as ShipScanState | undefined);
