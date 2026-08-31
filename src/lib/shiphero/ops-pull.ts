@@ -8,6 +8,7 @@
 // Board) so it's always accurate — no cache/delta needed.
 
 import { shipheroGraphql } from "./client";
+import { todayUkYmd, ukDayStartUtcNaive } from "@/lib/uk-time";
 import { serviceLabel, laneLabel, type LaneCount, type OpsStats } from "@/lib/ops-types";
 
 const q1 = (s: string) => String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -45,12 +46,8 @@ async function scanLanes(filterArgs: string): Promise<LaneScan> {
   return { total, byLane };
 }
 
-function todayStartISO(): string {
-  const d = new Date();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mo}-${da}T00:00:00`;
-}
+// "Today" is a London day; ShipHero filters take naive UTC.
+const todayStartISO = (): string => ukDayStartUtcNaive(todayUkYmd());
 
 // Persisted between syncs (inside the ops snapshot) so shipped-today is
 // incremental: we only pull shipments newer than the cursor (minus a 15-min
@@ -78,7 +75,7 @@ async function fullLineQuantities(shipmentId: string): Promise<number[]> {
 }
 
 async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
-  const today = todayStartISO().slice(0, 10);
+  const today = todayUkYmd();
   const state: ShipScanState =
     prev && prev.date === today
       ? { ...prev, seen: [...prev.seen], byService: { ...prev.byService }, byLane: { ...prev.byLane } }

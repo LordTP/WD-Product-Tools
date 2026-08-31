@@ -1,3 +1,4 @@
+import { ukDay, ukYmd } from "./uk-time";
 // Client-safe types + derivation for the Returns page. No server imports —
 // shared by the pull, the cache, and the component. Rows are cached in SQLite
 // and all filtering/aggregation happens client-side on the selected window.
@@ -162,7 +163,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
     if (openedInWindow) {
       total++;
       unitsExpected += r.expected;
-      openedByDay.set(r.createdAt.slice(0, 10), (openedByDay.get(r.createdAt.slice(0, 10)) ?? 0) + 1);
+      openedByDay.set(ukYmd(r.createdAt), (openedByDay.get(ukYmd(r.createdAt)) ?? 0) + 1);
       if (r.exchangeOrders.length) exchanges++;
       if (isOpen(r)) {
         const f = r.exVatFactor ?? 1 / 1.2; // pre-Aug-2026 cached rows: assume UK VAT
@@ -198,7 +199,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       unitsRestocked += r.restocked;
       valueProcessed += r.items.reduce((a, it) => a + it.received * it.price, 0) * (r.exVatFactor ?? 1 / 1.2);
       turnarounds.push((new Date(firstReceive.at).getTime() - new Date(r.createdAt).getTime()) / 86_400_000);
-      processedByDay.set(firstReceive.at.slice(0, 10), (processedByDay.get(firstReceive.at.slice(0, 10)) ?? 0) + 1);
+      processedByDay.set(ukYmd(firstReceive.at), (processedByDay.get(ukYmd(firstReceive.at)) ?? 0) + 1);
     }
     for (const h of r.history) {
       if (!h.user || !inWindow(h.at)) continue;
@@ -219,7 +220,7 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       for (const e of p.events) {
         const d = new Date(e.at);
         byHour[d.getHours()]++;
-        const day = e.at.slice(0, 10);
+        const day = ukYmd(e.at);
         byDay[day] = (byDay[day] ?? 0) + 1;
         hourKeys.add(`${day}T${String(d.getHours()).padStart(2, "0")}`);
       }
@@ -241,8 +242,8 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
   // Daily trend across the window (clamped to today; opened + processed merged).
   const trend: TrendDay[] = [];
   {
-    const start = new Date(`${from.slice(0, 10)}T00:00:00`);
-    const endStr = to.slice(0, 10) < nowIso.slice(0, 10) ? to.slice(0, 10) : nowIso.slice(0, 10);
+    const start = new Date(`${ukYmd(from)}T00:00:00`);
+    const endStr = ukYmd(to) < ukYmd(nowIso) ? ukYmd(to) : ukYmd(nowIso);
     for (let d = new Date(start); ; d.setDate(d.getDate() + 1)) {
       const mo = String(d.getMonth() + 1).padStart(2, "0");
       const da = String(d.getDate()).padStart(2, "0");
@@ -296,8 +297,7 @@ export function timeHM(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// London-day label for a ShipHero naive-UTC timestamp.
 export function dayLabel(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return ukDay(iso);
 }

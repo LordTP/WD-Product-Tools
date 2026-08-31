@@ -4,6 +4,7 @@
 // would write, not a tooltip.
 
 import { area, timeHM, TYPE_META, type EventType, type WarehouseDay, type WarehouseEvent } from "./warehouse-types";
+import { ukHour } from "./uk-time";
 
 export interface Session { start: string; end: string; kind: string; count: number }
 export interface PersonReport {
@@ -76,8 +77,8 @@ export function personReport(day: WarehouseDay, name: string): PersonReport {
     const t = byTypeMap.get(e.type) ?? { count: 0, units: 0 };
     t.count++; t.units += Math.abs(e.qty); byTypeMap.set(e.type, t);
     units += Math.abs(e.qty);
-    const h = new Date(e.at).getHours();
-    if (!Number.isNaN(h)) { byHour[h]++; hourKeys.add(h); }
+    const h = ukHour(e.at);
+    byHour[h]++; hourKeys.add(h);
     skus.add(e.sku);
     const bin = e.type === "picked" ? e.fromBin : (e.toBin && e.toBin !== "SHIPPED" ? e.toBin : e.fromBin);
     if (bin && !["PO", "RMA", "SHIPPED"].includes(bin) && !/^Tote/i.test(bin)) {

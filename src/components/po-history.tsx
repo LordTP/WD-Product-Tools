@@ -12,6 +12,7 @@ import type { PoSummary, PoDetail, PoLineDetail } from "@/lib/shiphero/po-pull";
 import { deriveSizeFromSku, type SizeMap } from "@/lib/sizes";
 import { ukDate } from "@/lib/shiphero/dates";
 import { parseDateRows, splitPaste } from "@/lib/po-dates-sheet";
+import { ukHM, ukYmd } from "@/lib/uk-time";
 import { PoUnreceive } from "@/components/po-unreceive";
 
 interface PoDatesRow {
@@ -34,7 +35,7 @@ interface HistoryPayload {
   cached: boolean;
 }
 interface TimelineItem { at: string; tone: "in" | "fix" | "date" | "info"; title: string; detail?: string }
-const hm = (iso: string) => iso.slice(11, 16);
+const hm = (iso: string) => ukHM(iso); // ShipHero naive-UTC → London wall-clock
 const gapMin = (a: string, b: string) => (new Date(b).getTime() - new Date(a).getTime()) / 60_000;
 
 // Merge ShipHero receives (grouped into per-person sessions), app corrections
@@ -1176,7 +1177,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
             <div className="flex items-center mb-1">
               <h3 className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium">History</h3>
               <div className="flex-1" />
-              {hist && <span className="text-[10.5px] text-slate-400 mr-2">as of {hm(hist.history.fetchedAt.replace("Z", ""))} · {hist.history.skusScanned} size{hist.history.skusScanned === 1 ? "" : "s"} checked</span>}
+              {hist && <span className="text-[10.5px] text-slate-400 mr-2">as of {hm(hist.history.fetchedAt)} · {hist.history.skusScanned} size{hist.history.skusScanned === 1 ? "" : "s"} checked</span>}
               <button onClick={() => loadHistory(true)} disabled={histLoading} className="text-[11px] px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">{histLoading ? "Reading…" : "Refresh"}</button>
             </div>
             {histErr && <p className="text-[11px] text-rose-600 mb-2">{histErr}</p>}
@@ -1185,8 +1186,8 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
             {hist && timeline.length > 0 && (
               <div className="flex flex-col">
                 {timeline.map((t, i) => {
-                  const day = t.at.slice(0, 10);
-                  const newDay = i === 0 || timeline[i - 1].at.slice(0, 10) !== day;
+                  const day = ukYmd(t.at);
+                  const newDay = i === 0 || ukYmd(timeline[i - 1].at) !== day;
                   const dot = t.tone === "in" ? "bg-emerald-500" : t.tone === "fix" ? "bg-rose-500" : t.tone === "date" ? "bg-indigo-500" : "bg-slate-300";
                   return (
                     <Fragment key={i}>

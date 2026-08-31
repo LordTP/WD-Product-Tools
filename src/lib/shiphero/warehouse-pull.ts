@@ -12,6 +12,7 @@
 //    ship. Actual dispatches come from the `shipments` query (which also carries
 //    the packer's user, for the "who shipped" column).
 
+import { ukDayEndUtcNaive, ukDayStartUtcNaive } from "@/lib/uk-time";
 import { shipheroGraphql } from "./client";
 import { getWarehouseId } from "./warehouse";
 import { getCachedSummaries } from "@/lib/po-cache";
@@ -68,8 +69,9 @@ async function resolveUsers(ids: string[]): Promise<Record<string, string>> {
 
 export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
   const warehouseId = await getWarehouseId();
-  const from = `${date}T00:00:00`;
-  const to = `${date}T23:59:59`;
+  // `date` is a London calendar day; ShipHero filters take naive UTC.
+  const from = ukDayStartUtcNaive(date);
+  const to = ukDayEndUtcNaive(date);
 
   // --- inventory changes ---
   const raw: Raw[] = [];

@@ -5,6 +5,7 @@
 // (deriveSummary) so period/filters re-render with zero API calls.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ukDayEndUtcNaive, ukDayStartUtcNaive } from "@/lib/uk-time";
 import {
   deriveSummary,
   fmtMoney,
@@ -134,14 +135,14 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
 
   // Window bounds as local-naive ISO strings (ShipHero timestamps are naive too).
   const [fromIso, toIso] = useMemo((): [string, string] => {
-    if (period.kind === "today") return [`${localYmd(new Date(now))}T00:00:00`, "9999-12-31T23:59:59"];
+    if (period.kind === "today") return [ukDayStartUtcNaive(localYmd(new Date(now))), "9999-12-31T23:59:59"];
     if (period.kind === "custom") {
       const f = customFrom || localYmd(new Date(now));
       const t = customTo || localYmd(new Date(now));
-      return [`${f}T00:00:00`, `${t}T23:59:59`];
+      return [ukDayStartUtcNaive(f), ukDayEndUtcNaive(t)];
     }
     const from = new Date(now - period.days * 86_400_000);
-    return [`${localYmd(from)}T00:00:00`, "9999-12-31T23:59:59"];
+    return [ukDayStartUtcNaive(localYmd(from)), "9999-12-31T23:59:59"];
   }, [period, customFrom, customTo, now]);
 
   const baseRows = useMemo(() => rows.filter((r) => !hideLegacy || r.isV2), [rows, hideLegacy]);

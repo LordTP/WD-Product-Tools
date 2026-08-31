@@ -1,3 +1,4 @@
+import { ukHM } from "./uk-time";
 // Client-safe types + helpers for the Warehouse Activity (Operations) page.
 // No DB/server imports. A "day" is pulled from ShipHero once, cached in the DB,
 // then served/filtered locally — so this file is shared by the pull, the cache,
@@ -128,10 +129,9 @@ export function initialsOf(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+// ShipHero timestamps are naive UTC; show London wall-clock (see lib/uk-time).
 export function timeHM(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return ukHM(iso);
 }
 
 /** Local YYYY-MM-DD for a Date (defaults to today). */
