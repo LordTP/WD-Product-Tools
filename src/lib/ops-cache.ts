@@ -6,7 +6,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appState } from "@/db/schema";
-import { computeOpsStats } from "@/lib/shiphero/ops-pull";
+import { computeOpsStats, type ShipScanState } from "@/lib/shiphero/ops-pull";
 import type { OpsStats } from "@/lib/ops-types";
 
 const KEY = "ops_stats";
@@ -22,7 +22,8 @@ export async function getOpsStats(): Promise<OpsStats | null> {
 }
 
 export async function syncOpsStats(): Promise<OpsStats> {
-  const computed = await computeOpsStats();
+  const prev = await getOpsStats();
+  const computed = await computeOpsStats(prev?.shipScan as ShipScanState | undefined);
   const stats: OpsStats = { ...computed, syncedAt: new Date().toISOString() };
   await db
     .insert(appState)

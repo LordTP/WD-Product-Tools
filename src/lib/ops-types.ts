@@ -24,6 +24,9 @@ export interface OpsStats {
   shippedByLane: LaneCount[];
   /** How many open orders we scanned to build this (diagnostic). */
   scannedOrders: number;
+  /** Incremental shipped-today accumulator (internal — lets the next sync pull
+   *  only shipments newer than the cursor). Shape owned by ops-pull. */
+  shipScan?: unknown;
 }
 
 /**

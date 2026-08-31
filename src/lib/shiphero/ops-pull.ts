@@ -52,26 +52,57 @@ function todayStartISO(): string {
   return `${d.getFullYear()}-${mo}-${da}T00:00:00`;
 }
 
-async function scanShippedToday() {
-  let shippedOrders = 0;
-  let shippedUnits = 0;
-  const byService = new Map<string, { count: number; units: number }>();
-  const byLane = new Map<string, { count: number; units: number }>();
-  const from = todayStartISO();
+// Persisted between syncs (inside the ops snapshot) so shipped-today is
+// incremental: we only pull shipments newer than the cursor (minus a 15-min
+// overlap; the seen-set dedupes the overlap). Resets automatically at midnight.
+export interface ShipScanState {
+  date: string; // YYYY-MM-DD the accumulators belong to
+  cursor: string | null; // max created_date seen
+  seen: string[]; // shipment ids counted today
+  orders: number;
+  units: number;
+  byService: Record<string, { count: number; units: number }>;
+  byLane: Record<string, { count: number; units: number }>;
+}
+
+// Most orders are 1–3 lines, and ShipHero prices a query by what you ASK for
+// (40 shipments × first:N nested), so keep the nested ask tiny…
+const NESTED_LINES = 5;
+// …and when a shipment actually hits the cap (a big multi), fetch its full
+// lines individually — rare, cheap, and the unit count stays exact.
+async function fullLineQuantities(shipmentId: string): Promise<number[]> {
+  const { data } = await shipheroGraphql<{
+    shipment?: { data?: { line_items?: { edges?: Array<{ node?: { quantity?: number } }> } } };
+  }>(`query { shipment(id: "${q1(shipmentId)}") { data { line_items(first: 100) { edges { node { quantity } } } } } }`);
+  return (data.shipment?.data?.line_items?.edges ?? []).map((e) => Number(e.node?.quantity || 0));
+}
+
+async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
+  const today = todayStartISO().slice(0, 10);
+  const state: ShipScanState =
+    prev && prev.date === today
+      ? { ...prev, seen: [...prev.seen], byService: { ...prev.byService }, byLane: { ...prev.byLane } }
+      : { date: today, cursor: null, seen: [], orders: 0, units: 0, byService: {}, byLane: {} };
+  const seen = new Set(state.seen);
+  const from = state.cursor
+    ? new Date(new Date(`${state.cursor}Z`).getTime() - 15 * 60_000).toISOString().slice(0, 19)
+    : todayStartISO();
+
   let after: string | null = null;
   let pages = 0;
   do {
     const afterArg: string = after ? `, after: "${after}"` : "";
     const query = `query { shipments(date_from: "${q1(from)}", voided: false) {
       data(first: 40${afterArg}) { pageInfo { hasNextPage endCursor }
-        edges { node {
+        edges { node { id legacy_id created_date
           order { shipping_lines { method carrier title } }
-          line_items(first: 50) { edges { node { quantity } } } } } } } }`;
+          line_items(first: ${NESTED_LINES}) { edges { node { quantity } } } } } } } }`;
     const { data } = await shipheroGraphql<{
       shipments?: {
         data?: {
           edges?: Array<{
             node?: {
+              id?: string; legacy_id?: number; created_date?: string | null;
               order?: { shipping_lines?: { method?: string | null; carrier?: string | null; title?: string | null } | null } | null;
               line_items?: { edges?: Array<{ node?: { quantity?: number } }> };
             };
@@ -84,37 +115,46 @@ async function scanShippedToday() {
     for (const e of conn?.edges ?? []) {
       const n = e.node;
       if (!n) continue;
-      shippedOrders += 1;
-      const lineCount = (n.line_items?.edges ?? []).length;
-      const units = (n.line_items?.edges ?? []).reduce((a, x) => a + Number(x.node?.quantity || 0), 0);
-      shippedUnits += units;
+      const key = String(n.legacy_id ?? n.id ?? "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      if (n.created_date && (!state.cursor || n.created_date > state.cursor)) state.cursor = n.created_date;
+      let qtys = (n.line_items?.edges ?? []).map((x) => Number(x.node?.quantity || 0));
+      if (qtys.length === NESTED_LINES && n.id) {
+        // Cap hit — this might be a big multi. Pull its full lines so units are exact.
+        const all = await fullLineQuantities(n.id);
+        if (all.length >= qtys.length) qtys = all;
+      }
+      const units = qtys.reduce((a, q) => a + q, 0);
+      state.orders += 1;
+      state.units += units;
       const sl = n.order?.shipping_lines;
       const svc = serviceLabel(sl?.method, sl?.carrier, sl?.title);
-      const svcCur = byService.get(svc) ?? { count: 0, units: 0 };
+      const svcCur = (state.byService[svc] ??= { count: 0, units: 0 });
       svcCur.count += 1;
       svcCur.units += units;
-      byService.set(svc, svcCur);
-      const lane = laneLabel(sl?.method, sl?.carrier, sl?.title, lineCount);
-      const laneCur = byLane.get(lane) ?? { count: 0, units: 0 };
+      const lane = laneLabel(sl?.method, sl?.carrier, sl?.title, qtys.length);
+      const laneCur = (state.byLane[lane] ??= { count: 0, units: 0 });
       laneCur.count += 1;
       laneCur.units += units;
-      byLane.set(lane, laneCur);
     }
     after = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
     pages += 1;
   } while (after && pages < MAX_PAGES);
-  return { shippedOrders, shippedUnits, byService, byLane };
+  state.seen = [...seen];
+  return state;
 }
 
 const sortLanes = (m: Map<string, number>): LaneCount[] =>
   [...m.entries()].map(([lane, count]) => ({ lane, count })).sort((a, b) => b.count - a.count);
 
-/** Compute the full dashboard snapshot live from ShipHero. */
-export async function computeOpsStats(): Promise<Omit<OpsStats, "syncedAt">> {
+/** Compute the full dashboard snapshot live from ShipHero. Pass the previous
+ *  snapshot's shipScan so shipped-today only pulls what's new since last sync. */
+export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<OpsStats, "syncedAt">> {
   const [open, ready, shipped] = await Promise.all([
     scanLanes(OPEN),
     scanLanes(`ready_to_ship: true, ${OPEN}`),
-    scanShippedToday(),
+    scanShippedToday(prevShip),
   ]);
 
   // Blocked = open minus ready, per lane (ready is a subset of open).
@@ -130,14 +170,15 @@ export async function computeOpsStats(): Promise<Omit<OpsStats, "syncedAt">> {
     readyByLane: sortLanes(ready.byLane),
     waitingTotal: Math.max(0, open.total - ready.total),
     waitingByLane: sortLanes(waitingByLane),
-    shippedOrders: shipped.shippedOrders,
-    shippedUnits: shipped.shippedUnits,
-    shippedByService: [...shipped.byService.entries()]
+    shippedOrders: shipped.orders,
+    shippedUnits: shipped.units,
+    shippedByService: Object.entries(shipped.byService)
       .map(([lane, v]) => ({ lane, count: v.count, units: v.units }))
       .sort((a, b) => b.count - a.count),
-    shippedByLane: [...shipped.byLane.entries()]
+    shippedByLane: Object.entries(shipped.byLane)
       .map(([lane, v]) => ({ lane, count: v.count, units: v.units }))
       .sort((a, b) => b.count - a.count),
     scannedOrders: open.total,
+    shipScan: shipped,
   };
 }
