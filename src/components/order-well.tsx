@@ -56,7 +56,8 @@ function cutoffViews(stats: OpsStats | null): CutoffView[] {
     const ordersLeft = lanes.reduce((a, l) => a + l.dueToday, 0);
     const left = weekday && minutes < toMin(carrier.van) ? toMin(carrier.van) - minutes : null;
     const needPerHour = left && left > 0 ? Math.ceil(ordersLeft / (left / 60)) : null;
-    const doingPerHour = stats?.shippedByHour?.[Math.max(0, hourNow - 1)] ?? 0;
+    // this carrier own-van rate, last completed hour (falls back to the total if the split is missing)
+    const doingPerHour = stats?.shippedByHourCarrier?.[carrier.key]?.[Math.max(0, hourNow - 1)] ?? stats?.shippedByHour?.[Math.max(0, hourNow - 1)] ?? 0;
     return { carrier, left, ordersLeft, needPerHour, doingPerHour, risk: needPerHour !== null && ordersLeft > 0 && doingPerHour < needPerHour };
   });
 }
@@ -176,7 +177,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
                   <span className="text-right text-xs text-slate-500">
                     {c.ordersLeft} due-today order{c.ordersLeft === 1 ? "" : "s"} still open
                     <b className={`block font-mono text-sm ${c.risk ? "text-rose-600" : "text-emerald-600"}`}>
-                      {c.needPerHour !== null ? `need ${c.needPerHour}/h · last hr ${c.doingPerHour}` : `shipped ${stats.shippedOrders} today`}
+                      {c.needPerHour === null ? `van gone — ${c.doingPerHour} last hr` : c.ordersLeft === 0 ? "all clear ✓" : `need ${c.needPerHour}/h · last hr ${c.doingPerHour}`}
                     </b>
                   </span>
                 </div>
@@ -310,7 +311,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
                     </span>
                     <span className="text-[15px] text-slate-300">
                       <b className="text-white">Van {c.carrier.van} · cutoff {c.carrier.cutoff}</b><br />
-                      {c.left !== null ? <>{c.ordersLeft} orders left{c.needPerHour !== null ? ` · need ${c.needPerHour}/h, last hr ${c.doingPerHour}` : ""}</> : "next collection next working day"}
+                      {c.left !== null ? (c.ordersLeft === 0 ? "all clear ✓" : `${c.ordersLeft} orders left · need ${c.needPerHour}/h, last hr ${c.doingPerHour}`) : "next collection next working day"}
                     </span>
                   </div>
                 ))}

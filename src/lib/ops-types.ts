@@ -33,6 +33,7 @@ export interface OpsStats {
   blockedProducts?: BlockedProduct[];
   countries?: CountryRow[];
   shippedByHour?: number[]; // London hours 0–23, today
+  shippedByHourCarrier?: Record<"dhl" | "rm", number[]>; // same, split by collecting carrier
   oldestReady?: { orderNumber: string; ageDays: number; lane: string } | null;
 }
 

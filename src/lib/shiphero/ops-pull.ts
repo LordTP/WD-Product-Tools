@@ -107,6 +107,7 @@ export interface ShipScanState {
   byLane: Record<string, { count: number; units: number }>;
   byHour?: number[]; // London hours 0–23
   byCountry?: Record<string, number>;
+  byHourCarrier?: Record<"dhl" | "rm", number[]>;
 }
 
 // Most orders are 1–3 lines, and ShipHero prices a query by what you ASK for
@@ -128,10 +129,12 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
       ? { ...prev, seen: [...prev.seen], byService: { ...prev.byService }, byLane: { ...prev.byLane } }
       : { date: today, cursor: null, seen: [], orders: 0, units: 0, byService: {}, byLane: {}, byHour: Array.from({ length: 24 }, () => 0), byCountry: {} };
   state.byHour = state.byHour ?? Array.from({ length: 24 }, () => 0);
-  if (!state.byCountry) {
-    // Snapshot predates country tracking — rescan the whole day once to backfill.
+  if (!state.byCountry || !state.byHourCarrier) {
+    // Snapshot predates country/carrier-hour tracking — rescan the day once to backfill.
     state.cursor = null; state.seen = []; state.orders = 0; state.units = 0; state.byService = {}; state.byLane = {}; state.byHour = Array.from({ length: 24 }, () => 0); state.byCountry = {};
+    state.byHourCarrier = { dhl: Array.from({ length: 24 }, () => 0), rm: Array.from({ length: 24 }, () => 0) };
   }
+  state.byHourCarrier = state.byHourCarrier ?? { dhl: Array.from({ length: 24 }, () => 0), rm: Array.from({ length: 24 }, () => 0) };
   const seen = new Set(state.seen);
   const from = state.cursor
     ? new Date(new Date(`${state.cursor}Z`).getTime() - 15 * 60_000).toISOString().slice(0, 19)
@@ -168,7 +171,13 @@ async function scanShippedToday(prev?: ShipScanState): Promise<ShipScanState> {
       if (!key || seen.has(key)) continue;
       seen.add(key);
       if (n.created_date && (!state.cursor || n.created_date > state.cursor)) state.cursor = n.created_date;
-      if (n.created_date) state.byHour![ukHour(n.created_date)] += 1;
+      const sl0 = n.order?.shipping_lines;
+      if (n.created_date) {
+        state.byHour![ukHour(n.created_date)] += 1;
+        // Which van does this parcel leave on? DHL carries its own; the rest go on the RM collection.
+        const vanKey: "dhl" | "rm" = /dhl/i.test(`${sl0?.method ?? ""} ${sl0?.carrier ?? ""}`) ? "dhl" : "rm";
+        state.byHourCarrier![vanKey][ukHour(n.created_date)] += 1;
+      }
       const cc = n.order?.shipping_address?.country || "?";
       state.byCountry![cc] = (state.byCountry![cc] ?? 0) + 1;
       let qtys = (n.line_items?.edges ?? []).map((x) => Number(x.node?.quantity || 0));
@@ -335,6 +344,7 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
     blockedProducts,
     countries,
     shippedByHour: shipped.byHour ?? [],
+    shippedByHourCarrier: shipped.byHourCarrier,
     oldestReady: oldest ? { orderNumber: oldest.orderNumber, ageDays: Math.round(ageDaysOf(oldest) * 10) / 10, lane: laneFamily(oldest.lane).family } : null,
   };
 }
