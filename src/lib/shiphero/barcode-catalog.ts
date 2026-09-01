@@ -77,10 +77,14 @@ async function pageProducts(updatedFrom: string | null): Promise<RawProduct[]> {
   return out;
 }
 
-/** Latest PO number per SKU from the local PO cache (newest po_date wins). */
+/** Latest REAL supplier PO per SKU from the local PO cache. Manual/utility POs
+ *  (returns booking-ins, admin fixes — auto-named like "PO-20260619-0001",
+ *  vendorless, or zero-value) must never end up on a garment label, so only
+ *  vendor POs named like "PO463" count. No match = blank PO on the label. */
 async function latestPoBySku(): Promise<Map<string, string>> {
   const [{ pos }, linesByPo] = await Promise.all([getCachedSummaries(), getCachedLinesByPo()]);
   const dated = pos
+    .filter((p) => /^PO\d+$/i.test(p.poNumber.trim()) && Boolean(p.vendorName) && Number(p.totalPrice ?? 0) > 0)
     .map((p) => ({ poNumber: p.poNumber, date: p.poDate ?? "" }))
     .sort((a, b) => a.date.localeCompare(b.date)); // oldest → newest so newest overwrites
   const map = new Map<string, string>();
