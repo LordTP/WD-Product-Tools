@@ -12,7 +12,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
 
   // No nav chrome on the login screen or the standalone Barcode Label Press.
-  if (pathname === "/login" || pathname.startsWith("/barcodes")) return <div className="flex h-full">{children}</div>;
+  // The Label Press scrolls the document (its content is taller than the
+  // viewport), so it must NOT be wrapped in the h-full flex box — that pins the
+  // white background to one viewport height and lets the body colour show below.
+  if (pathname.startsWith("/barcodes")) return <>{children}</>;
+  if (pathname === "/login") return <div className="flex h-full">{children}</div>;
 
   return (
     <div className="flex h-full">

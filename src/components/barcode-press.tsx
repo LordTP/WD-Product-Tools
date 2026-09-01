@@ -1,7 +1,7 @@
 "use client";
 
 // Barcode Label Press — standalone page at /barcodes with its own password.
-// Pulls products from the published Google Sheet (via /api/barcodes/sheet),
+// Pulls products from ShipHero (via /api/barcodes/products, cached in the DB),
 // staff pick sizes + quantities and print to the Zebra via Browser Print
 // (ZPL, http://localhost:9100 first), falling back to a normal print window.
 // No history/analytics — this is a printing tool, nothing more.
@@ -11,7 +11,7 @@
 // TITLE (bold caps) → SKU (mono) → barcode (mono, lighter) → COLOUR · SIZE · PO.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { barcodeSVG, formatBarcodeNumber, openPrintWindow, parseSheetCsv, tryZPLPrint, type LabelProduct, type QueueItem } from "@/lib/barcode-labels";
+import { barcodeSVG, formatBarcodeNumber, openPrintWindow, tryZPLPrint, type LabelProduct, type QueueItem } from "@/lib/barcode-labels";
 
 type SheetState = { status: "loading" | "ok" | "error" | "auth"; products: LabelProduct[]; error?: string };
 
@@ -28,21 +28,19 @@ export function BarcodePress() {
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const loadSheet = useCallback(async () => {
+  const loadSheet = useCallback(async (sync = false) => {
     setSheet((s) => ({ ...s, status: "loading" }));
     try {
-      const res = await fetch("/api/barcodes/sheet", { cache: "no-store" });
+      const res = await fetch(`/api/barcodes/products${sync ? "?sync=1" : ""}`, { cache: "no-store" });
       if (res.status === 401) { setSheet({ status: "auth", products: [] }); return; }
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
         setSheet({ status: "error", products: [], error: body.error || `Server ${res.status}` });
         return;
       }
-      const parsed = parseSheetCsv(await res.text());
-      if (parsed.ok) setSheet({ status: "ok", products: parsed.products });
-      else setSheet({ status: "error", products: [], error: parsed.error });
+      setSheet({ status: "ok", products: body.products ?? [] });
     } catch {
-      setSheet({ status: "error", products: [], error: "Could not reach the sheet service." });
+      setSheet({ status: "error", products: [], error: "Could not reach the catalogue service." });
     }
   }, []);
   useEffect(() => { void (async () => { await loadSheet(); })(); }, [loadSheet]);
@@ -131,8 +129,8 @@ export function BarcodePress() {
         <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by SKU, product name or barcode…"
           className="flex-1 border border-slate-300 rounded-xl px-4 py-3 text-[15px] focus:ring-2 focus:ring-slate-200 focus:border-slate-500 outline-none" />
         <span className="text-sm text-slate-400 shrink-0">{filtered.length} of {items.length} products</span>
-        <button onClick={loadSheet} disabled={sheet.status === "loading"} className="text-sm px-3.5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 shrink-0" title="Re-fetch the Google Sheet">
-          {sheet.status === "loading" ? "Refreshing…" : "Refresh sheet"}
+        <button onClick={() => loadSheet(true)} disabled={sheet.status === "loading"} className="text-sm px-3.5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 shrink-0" title="Pull the latest products from ShipHero">
+          {sheet.status === "loading" ? "Syncing…" : "Sync products"}
         </button>
       </div>
 
@@ -169,7 +167,7 @@ export function BarcodePress() {
 
       {sheet.status === "error" && (
         <div className="mx-6 mt-4 text-sm bg-rose-50 border border-rose-200 text-rose-700 rounded-lg px-4 py-2.5">
-          Couldn&apos;t load the product sheet: {sheet.error}
+          Couldn&apos;t load the product catalogue: {sheet.error}
         </div>
       )}
       {toast && (
@@ -181,7 +179,7 @@ export function BarcodePress() {
       {/* hairline-divided product grid */}
       <div className="flex-1">
         {sheet.status === "loading" && items.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-20">Loading the product sheet…</p>
+          <p className="text-sm text-slate-400 text-center py-20">Loading products…</p>
         ) : filtered.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-20">{tab === "selected" ? "Nothing selected yet." : "No products match that search."}</p>
         ) : (
