@@ -52,8 +52,10 @@ function cutoffViews(stats: OpsStats | null): CutoffView[] {
   const { minutes, weekday } = londonNow();
   const hourNow = Math.floor(minutes / 60);
   return CARRIERS.map((carrier) => {
-    const lanes = (stats?.lanes ?? []).filter((l) => carrierForLane(l.family) === carrier.key);
-    const ordersLeft = lanes.reduce((a, l) => a + l.dueToday, 0);
+    // due-today counted by shipping METHOD (which van the parcel leaves on);
+    // falls back to lane-based counting for snapshots from before this field.
+    const laneFallback = (stats?.lanes ?? []).filter((l) => carrierForLane(l.family) === carrier.key).reduce((a, l) => a + l.dueToday, 0);
+    const ordersLeft = stats?.dueByCarrier?.[carrier.key] ?? laneFallback;
     const left = weekday && minutes < toMin(carrier.van) ? toMin(carrier.van) - minutes : null;
     const needPerHour = left && left > 0 ? Math.ceil(ordersLeft / (left / 60)) : null;
     // this carrier own-van rate, last completed hour (falls back to the total if the split is missing)

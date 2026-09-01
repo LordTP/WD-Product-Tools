@@ -10,7 +10,7 @@
 import { shipheroGraphql } from "./client";
 import { todayUkYmd, ukDayStartUtcNaive, ukHour } from "@/lib/uk-time";
 import { serviceLabel, laneLabel, type AgeBucket, type BlockedProduct, type CountryRow, type LaneCount, type LaneRow, type OpsStats, type OrderLite } from "@/lib/ops-types";
-import { carrierForLane, CARRIERS, laneFamily } from "@/lib/ops-cutoffs";
+import { CARRIERS, laneFamily } from "@/lib/ops-cutoffs";
 import { getCachedLinesByPo, getCachedSummaries } from "@/lib/po-cache";
 import { getSizeMap } from "@/lib/size-codes";
 import { deriveSizeFromSku } from "@/lib/sizes";
@@ -26,6 +26,7 @@ interface OpenOrder {
   lane: string; // raw fulfillment_status ("Standard - Singles", "INFLUENCER"…)
   createdAt: string; // naive UTC
   country: string;
+  vanKey: "dhl" | "rm"; // which collection this parcel leaves on (by shipping method)
   units: number; // from first 3 lines (enough to tell single vs multi)
   skus: string[];
   items: string; // human summary
@@ -41,11 +42,13 @@ async function scanOpenOrders(): Promise<OpenOrder[]> {
     const afterArg: string = after ? `, after: "${after}"` : "";
     const query = `query { orders(${OPEN}) { data(first: 50${afterArg}) { pageInfo { hasNextPage endCursor }
       edges { node { id legacy_id order_number fulfillment_status created_at
+        shipping_lines { method carrier }
         shipping_address { country }
         line_items(first: 3) { edges { node { sku product_name quantity } } } } } } } }`;
     const { data } = await shipheroGraphql<{
       orders?: { data?: { edges?: Array<{ node?: {
         id?: string; legacy_id?: number; order_number?: string; fulfillment_status?: string | null; created_at?: string | null;
+        shipping_lines?: { method?: string | null; carrier?: string | null } | null;
         shipping_address?: { country?: string | null } | null;
         line_items?: { edges?: Array<{ node?: { sku?: string; product_name?: string; quantity?: number } }> };
       } }>; pageInfo?: { hasNextPage?: boolean; endCursor?: string } } };
@@ -62,6 +65,7 @@ async function scanOpenOrders(): Promise<OpenOrder[]> {
         lane: n.fulfillment_status || "(none)",
         createdAt: n.created_at ?? "",
         country: n.shipping_address?.country || "?",
+        vanKey: /dhl/i.test(`${n.shipping_lines?.method ?? ""} ${n.shipping_lines?.carrier ?? ""}`) ? "dhl" : "rm",
         units: lines.reduce((a, l) => a + Number(l.quantity || 0), 0),
         skus: lines.map((l) => l.sku ?? "").filter(Boolean),
         items: lines.map((l) => `${l.product_name ?? l.sku ?? "?"} ×${l.quantity ?? 1}`).join(", "),
@@ -255,12 +259,14 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
     const r = rowFor(family);
     r.ready += 1;
     if (kind === "multi" || (kind === null && o.units > 1)) r.multis += 1; else r.singles += 1;
-    if (o.createdAt && o.createdAt < cutoffs[carrierForLane(o.lane)]) r.dueToday += 1;
+    if (o.createdAt && o.createdAt < cutoffs[o.vanKey]) r.dueToday += 1;
     const age = Math.round(ageDaysOf(o) * 10) / 10;
     if (r.oldestReadyDays === null || age > r.oldestReadyDays) r.oldestReadyDays = age;
   }
   for (const o of blocked) rowFor(laneFamily(o.lane).family).blocked += 1;
   const lanes = [...laneMap.values()].sort((a, b) => b.ready - a.ready);
+  const dueByCarrier: Record<"dhl" | "rm", number> = { dhl: 0, rm: 0 };
+  for (const o of ready) if (o.createdAt && o.createdAt < cutoffs[o.vanKey]) dueByCarrier[o.vanKey] += 1;
 
   // age buckets over ready orders (oldest first, capped for the click-through table)
   const liteOf = (o: OpenOrder): OrderLite => ({
@@ -345,6 +351,7 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
     countries,
     shippedByHour: shipped.byHour ?? [],
     shippedByHourCarrier: shipped.byHourCarrier,
+    dueByCarrier,
     oldestReady: oldest ? { orderNumber: oldest.orderNumber, ageDays: Math.round(ageDaysOf(oldest) * 10) / 10, lane: laneFamily(oldest.lane).family } : null,
   };
 }

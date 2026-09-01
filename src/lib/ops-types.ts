@@ -34,6 +34,9 @@ export interface OpsStats {
   countries?: CountryRow[];
   shippedByHour?: number[]; // London hours 0–23, today
   shippedByHourCarrier?: Record<"dhl" | "rm", number[]>; // same, split by collecting carrier
+  /** Ready orders due today per collecting van (by shipping METHOD, not lane —
+   *  dhl_express:domestic parcels leave on the DHL van despite a Standard lane). */
+  dueByCarrier?: Record<"dhl" | "rm", number>;
   oldestReady?: { orderNumber: string; ageDays: number; lane: string } | null;
 }
 
