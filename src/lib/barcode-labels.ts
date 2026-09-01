@@ -63,17 +63,23 @@ export function parseSheetCsv(text: string): { ok: true; products: LabelProduct[
   const mapping = autoDetectColumns(headers);
   const missing = LABEL_FIELDS.filter((f) => !mapping[f]);
   if (missing.length) return { ok: false, error: `Sheet is missing recognisable columns for: ${missing.join(", ")}.` };
-  const products = result.data
-    .map((row) => ({
+  // De-duplicate by SKU (last row wins, matching the old app's merge) — the
+  // sheet contains repeated SKUs, and duplicate React keys corrupt filtering.
+  const bySku = new Map<string, LabelProduct>();
+  let i = 0;
+  for (const row of result.data) {
+    const p: LabelProduct = {
       sku: String(row[mapping.sku!] ?? "").trim(),
       po: String(row[mapping.po!] ?? "").trim(),
       title: String(row[mapping.title!] ?? "").trim(),
       colour: String(row[mapping.colour!] ?? "").trim(),
       size: String(row[mapping.size!] ?? "").trim(),
       barcode: String(row[mapping.barcode!] ?? "").trim(),
-    }))
-    .filter((p) => p.sku || p.title || p.barcode);
-  return { ok: true, products };
+    };
+    if (!(p.sku || p.title || p.barcode)) continue;
+    bySku.set(p.sku || `row-${i++}`, p);
+  }
+  return { ok: true, products: [...bySku.values()] };
 }
 
 // ---------- barcode encoders (SVG preview + HTML fallback) ----------
