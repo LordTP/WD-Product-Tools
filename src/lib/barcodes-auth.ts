@@ -9,7 +9,9 @@ export const BARCODES_COOKIE = "wd_barcodes";
 const SALT = "wanderdoll-barcode-press-v1";
 
 function configuredPassword(): string {
-  return process.env.BARCODES_PASSWORD ?? "";
+  // Own password when set; otherwise the main app password does the job —
+  // so the page is gated out of the box with nothing new to configure.
+  return process.env.BARCODES_PASSWORD || process.env.APP_PASSWORD || "";
 }
 
 export function isBarcodesAuthEnabled(): boolean {

@@ -26,10 +26,11 @@ export async function GET() {
       return Response.json({ error: "auth" }, { status: 401 });
     }
   }
-  const raw = process.env.BARCODES_SHEET_CSV_URL || process.env.GOOGLE_SHEET_CSV_URL;
-  if (!raw) {
-    return Response.json({ error: "BARCODES_SHEET_CSV_URL is not set — add the published Google Sheet CSV link to the environment." }, { status: 503 });
-  }
+  // The label sheet is a *published* Google Sheet (public by design), so the
+  // link ships as a default; BARCODES_SHEET_CSV_URL overrides it if it moves.
+  const DEFAULT_SHEET =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxDoNkHr2g8DE4PWhgt7_bSkdNpo7Gkm2mZ85N6nYUbvDPdrPfQQGe96zIDwr10XpnoYimkxvGKHMJ/pubhtml?gid=457232960&single=true";
+  const raw = process.env.BARCODES_SHEET_CSV_URL || process.env.GOOGLE_SHEET_CSV_URL || DEFAULT_SHEET;
   try {
     const res = await fetch(normaliseSheetUrl(raw), { cache: "no-store" });
     if (!res.ok) return Response.json({ error: `Google Sheets returned ${res.status}.` }, { status: 502 });
