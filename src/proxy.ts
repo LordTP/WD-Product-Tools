@@ -14,6 +14,12 @@ export function proxy(req: NextRequest) {
   if (pathname === "/login" || pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
+  // The Barcode Label Press is its own island with its own password (see
+  // lib/barcodes-auth): skip the main gate; its sheet API enforces the
+  // barcodes cookie itself, and the page shows its own password screen.
+  if (pathname === "/barcodes" || pathname.startsWith("/api/barcodes/")) {
+    return NextResponse.next();
+  }
 
   if (isValidToken(req.cookies.get(COOKIE_NAME)?.value)) {
     return NextResponse.next();

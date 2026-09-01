@@ -11,8 +11,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  // No nav chrome on the login screen.
-  if (pathname === "/login") return <div className="flex h-full">{children}</div>;
+  // No nav chrome on the login screen or the standalone Barcode Label Press.
+  if (pathname === "/login" || pathname.startsWith("/barcodes")) return <div className="flex h-full">{children}</div>;
 
   return (
     <div className="flex h-full">
