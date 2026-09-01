@@ -60,10 +60,11 @@ async function pageProducts(updatedFrom: string | null): Promise<RawProduct[]> {
   const out: RawProduct[] = [];
   let after: string | null = null;
   let pages = 0;
-  const filter = updatedFrom ? `updated_from: "${updatedFrom.replace(/"/g, "")}"` : "";
+  // GraphQL rejects empty parens — omit the argument list entirely on a full pull.
+  const filter = updatedFrom ? `(updated_from: "${updatedFrom.replace(/"/g, "")}")` : "";
   do {
     const afterArg: string = after ? `, after: "${after}"` : "";
-    const query = `query { products(${filter}) { data(first: 100${afterArg}) { pageInfo { hasNextPage endCursor }
+    const query = `query { products${filter} { data(first: 100${afterArg}) { pageInfo { hasNextPage endCursor }
       edges { node { sku name barcode virtual } } } } }`;
     const { data } = await shipheroGraphql<{
       products?: { data?: { edges?: Array<{ node?: RawProduct }>; pageInfo?: { hasNextPage?: boolean; endCursor?: string } } };
