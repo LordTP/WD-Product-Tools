@@ -1,4 +1,5 @@
 import { hasShipheroCredential, ShipheroError } from "@/lib/shiphero/client";
+import { runJob } from "@/lib/sync-registry";
 import { syncBinsCache } from "@/lib/bins-cache";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,9 @@ export async function POST(req: Request) {
   }
   try {
     const body = await req.json().catch(() => ({}));
-    const result = await syncBinsCache("PICK-00", "PICK-", { full: body.full === true });
+    const r = await runJob("bins", () => syncBinsCache("PICK-00", "PICK-", { full: body.full === true }));
+    if (!r.ok) throw new Error(r.error ?? "Sync failed.");
+    const result = r.result as object;
     return Response.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof ShipheroError) {

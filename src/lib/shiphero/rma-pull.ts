@@ -104,17 +104,21 @@ function toRow(n: RawReturnNode, userNames: Record<string, string>): ReturnRow {
   };
 }
 
-/** Pull all returns created since `dateFrom` (ISO date/datetime). */
+/** Pull returns either created since `dateFrom` (full window) or — much
+ *  cheaper — touched since `updatedFrom` (incremental: catches new returns AND
+ *  status changes on old ones in one query). */
 export async function pullReturns(
-  dateFrom: string,
+  filter: string | { dateFrom?: string; updatedFrom?: string },
   userNames: Record<string, string>,
 ): Promise<{ rows: ReturnRow[]; unknownUserIds: string[] }> {
+  const f = typeof filter === "string" ? { dateFrom: filter } : filter;
+  const filterArg = f.updatedFrom ? `updated_from: "${q1(f.updatedFrom)}"` : `date_from: "${q1(f.dateFrom ?? "")}"`;
   const nodes: RawReturnNode[] = [];
   let after: string | null = null;
   let pages = 0;
   do {
     const afterArg: string = after ? `, after: "${after}"` : "";
-    const query = `query { returns(date_from: "${q1(dateFrom)}") {
+    const query = `query { returns(${filterArg}) {
       data(first: 20${afterArg}) { pageInfo { hasNextPage endCursor }
         edges { node {
           id legacy_id created_at status reason partner_id shipping_carrier

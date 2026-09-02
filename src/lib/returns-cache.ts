@@ -68,22 +68,36 @@ export async function listCachedReturns(): Promise<ReturnRow[]> {
   return out;
 }
 
-export async function syncReturns(): Promise<SyncMeta> {
-  // Window: last 14 days, extended back to the oldest still-pending v2 return.
-  let from = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 19);
+export async function syncReturns(opts: { full?: boolean } = {}): Promise<SyncMeta> {
+  const prevMeta = await getSyncMeta();
   const anyRow = await db.select({ id: returnsCache.id }).from(returnsCache).limit(1);
-  if (anyRow.length === 0) {
-    from = BACKFILL_FROM;
+  const incremental = !opts.full && anyRow.length > 0 && !!prevMeta?.syncedAt;
+
+  let filter: string | { updatedFrom: string };
+  let from: string;
+  if (incremental) {
+    // Only returns TOUCHED since the last sync (1h overlap) — new ones and
+    // status changes on old ones both arrive in this one cheap query.
+    from = new Date(new Date(prevMeta!.syncedAt).getTime() - 3600_000).toISOString().slice(0, 19);
+    filter = { updatedFrom: from };
   } else {
-    const [oldestPending] = await db
-      .select({ m: min(returnsCache.createdAt) })
-      .from(returnsCache)
-      .where(and(eq(returnsCache.status, "pending"), eq(returnsCache.isV2, 1)));
-    if (oldestPending?.m && oldestPending.m < from) from = oldestPending.m;
+    // Full window: last 14 days, extended back to the oldest still-pending v2
+    // return (or the v2 cutover on an empty cache).
+    from = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 19);
+    if (anyRow.length === 0) {
+      from = BACKFILL_FROM;
+    } else {
+      const [oldestPending] = await db
+        .select({ m: min(returnsCache.createdAt) })
+        .from(returnsCache)
+        .where(and(eq(returnsCache.status, "pending"), eq(returnsCache.isV2, 1)));
+      if (oldestPending?.m && oldestPending.m < from) from = oldestPending.m;
+    }
+    filter = from;
   }
 
   let names = await getUserNames();
-  const { rows, unknownUserIds } = await pullReturns(from, names);
+  const { rows, unknownUserIds } = await pullReturns(filter, names);
 
   // Resolve any new people once, persist, and re-stamp names on this pull.
   if (unknownUserIds.length) {

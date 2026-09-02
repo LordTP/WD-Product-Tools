@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { BARCODES_COOKIE, isBarcodesAuthEnabled, isValidBarcodesToken } from "@/lib/barcodes-auth";
 import { getBarcodeCatalog, syncBarcodeCatalog } from "@/lib/shiphero/barcode-catalog";
+import { runJob } from "@/lib/sync-registry";
 import { hasShipheroCredential, ShipheroError } from "@/lib/shiphero/client";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,9 @@ export async function GET(req: Request) {
     let catalog = wantSync || !(await getBarcodeCatalog()) ? null : await getBarcodeCatalog();
     if (!catalog) {
       if (!hasShipheroCredential()) return Response.json({ error: "ShipHero isn't connected and no catalogue is cached yet." }, { status: 503 });
-      catalog = await syncBarcodeCatalog();
+      const r = await runJob("barcodes", () => syncBarcodeCatalog());
+      if (!r.ok) throw new Error(r.error ?? "Catalogue sync failed.");
+      catalog = r.result as Awaited<ReturnType<typeof syncBarcodeCatalog>>;
     }
     return Response.json({ products: catalog.products, syncedAt: catalog.syncedAt });
   } catch (err) {

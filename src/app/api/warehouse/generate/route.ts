@@ -1,5 +1,6 @@
 import { hasShipheroCredential, ShipheroError } from "@/lib/shiphero/client";
 import { generateDay } from "@/lib/warehouse-cache";
+import { runJob } from "@/lib/sync-registry";
 
 export const dynamic = "force-dynamic";
 // Pulls a full day of inventory changes + shipments; give it room.
@@ -17,7 +18,9 @@ export async function POST(req: Request) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return Response.json({ error: "Give a date as YYYY-MM-DD." }, { status: 400 });
     }
-    const day = await generateDay(date);
+    const r = await runJob("warehouseToday", () => generateDay(date));
+    if (!r.ok) throw new Error(r.error ?? "Generate failed.");
+    const day = r.result;
     return Response.json({ ok: true, day });
   } catch (err) {
     if (err instanceof ShipheroError) {

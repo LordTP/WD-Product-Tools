@@ -1,5 +1,6 @@
 import { hasShipheroCredential, ShipheroError } from "@/lib/shiphero/client";
 import { syncReturns } from "@/lib/returns-cache";
+import { runJob } from "@/lib/sync-registry";
 
 export const dynamic = "force-dynamic";
 // First sync backfills a month of RMAs with nested history; give it room.
@@ -12,8 +13,9 @@ export async function POST() {
     return Response.json({ error: "ShipHero isn't connected." }, { status: 400 });
   }
   try {
-    const meta = await syncReturns();
-    return Response.json({ ok: true, meta });
+    const r = await runJob("returns", () => syncReturns());
+    if (!r.ok) throw new Error(r.error ?? "Sync failed.");
+    return Response.json({ ok: true, meta: r.result });
   } catch (err) {
     if (err instanceof ShipheroError) {
       const status = err.kind === "throttled" ? 429 : 502;
