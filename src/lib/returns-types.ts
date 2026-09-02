@@ -123,15 +123,22 @@ export function isOpen(r: ReturnRow): boolean {
 }
 
 const SIZE_TAIL = /\s+[-–]?\s*(XXS|XS|S|M|L|XL|XXL|S-M|M-L|L-XL|XS-S|UK \d+|ONE SIZE)$/i;
+const NOTE_TAIL = /\s*note\s+preorder\s*$/i;
+
+/** Drop marketing suffixes that don't change the product ("… Note PREORDER"),
+ *  so a preorder RAYNE groups with the normal RAYNE. Always trimmed. */
+export function cleanProductName(name: string): string {
+  return String(name ?? "").replace(NOTE_TAIL, "").trim();
+}
 
 /** Strip the size suffix off a product name so sizes group ("… | LEMON XS" → "… | LEMON"). */
 export function productKey(name: string): string {
-  return name.replace(SIZE_TAIL, "").replace(/\s+[-–]$/, "").trim();
+  return cleanProductName(name).replace(SIZE_TAIL, "").replace(/\s+[-–]$/, "").trim();
 }
 
 /** The size the product name carries ("… | LEMON XS" → "XS"), or "?" */
 export function sizeOf(name: string): string {
-  const m = name.match(SIZE_TAIL);
+  const m = cleanProductName(name).match(SIZE_TAIL);
   return m ? m[1].toUpperCase() : "?";
 }
 

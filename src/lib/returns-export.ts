@@ -14,6 +14,14 @@ const SLATE_100 = "FFF1F5F9";
 const SLATE_200 = "FFE2E8F0";
 const ROSE = "FFE11D48";
 
+interface RefundAgg {
+  returns: Set<string>;
+  units: number;
+  faulty: number;
+  value: number;
+  reasons: Map<string, number>;
+}
+
 interface ProductAgg {
   key: string;
   returns: Set<string>;
@@ -21,9 +29,14 @@ interface ProductAgg {
   faulty: number;
   value: number;
   reasons: Map<string, number>;
+  // Refunded (units already processed at the desk; legacy pre-Swap rows count
+  // as refunded — they're frozen history) vs still to be refunded.
+  split: Record<"refunded" | "pending", RefundAgg>;
   // size -> reason -> units (+ per-size totals/faulty)
   matrix: Map<string, { total: number; faulty: number; byReason: Map<string, number> }>;
 }
+
+const newRefundAgg = (): RefundAgg => ({ returns: new Set<string>(), units: 0, faulty: 0, value: 0, reasons: new Map<string, number>() });
 
 export async function buildReturnsExport(opts: {
   from: string; // YYYY-MM-DD
@@ -45,7 +58,7 @@ export async function buildReturnsExport(opts: {
       const key = productKey(it.productName || it.sku);
       const p = products.get(key) ?? {
         key, returns: new Set<string>(), units: 0, faulty: 0, value: 0,
-        reasons: new Map(), matrix: new Map(),
+        reasons: new Map(), split: { refunded: newRefundAgg(), pending: newRefundAgg() }, matrix: new Map(),
       };
       const reason = (it.reason || r.reason || "Other").trim() || "Other";
       const size = sizeOf(it.productName || "");
@@ -60,6 +73,17 @@ export async function buildReturnsExport(opts: {
       if (faulty) m.faulty += it.quantity;
       m.byReason.set(reason, (m.byReason.get(reason) ?? 0) + it.quantity);
       p.matrix.set(size, m);
+      // Refund split: processed units are refunded, the rest still to be.
+      const qtyRefunded = r.isV2 ? Math.min(it.received, it.quantity) : it.quantity;
+      for (const [k, q] of [["refunded", qtyRefunded], ["pending", it.quantity - qtyRefunded]] as const) {
+        if (q <= 0) continue;
+        const s = p.split[k];
+        s.returns.add(r.id);
+        s.units += q;
+        s.value += q * it.price * factor;
+        if (faulty) s.faulty += q;
+        s.reasons.set(reason, (s.reasons.get(reason) ?? 0) + q);
+      }
       products.set(key, p);
       globalReasons.set(reason, (globalReasons.get(reason) ?? 0) + it.quantity);
     }
@@ -80,14 +104,14 @@ export async function buildReturnsExport(opts: {
   // ---------- Summary sheet ----------
   const sum = wb.addWorksheet("Summary", { views: [{ state: "frozen", ySplit: 4 }] });
   sum.columns = [
-    { width: 52 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 10 }, { width: 12 }, { width: 30 },
+    { width: 52 }, { width: 15 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 10 }, { width: 12 }, { width: 30 },
   ];
   sum.getCell("A1").value = "Returns roll-up";
   sum.getCell("A1").font = { bold: true, size: 16 };
-  sum.getCell("A2").value = `${ukDate(opts.from)} → ${ukDate(opts.to)} · ${inRange.length} returns · values ex tax, net of discounts${opts.includeLegacy ? " · includes pre-Swap-v2 returns" : ""}`;
+  sum.getCell("A2").value = `${ukDate(opts.from)} → ${ukDate(opts.to)} · ${inRange.length} returns · values ex tax, net of discounts · refunded = units processed at the desk${opts.includeLegacy ? " · includes pre-Swap-v2 returns (counted as refunded)" : ""}`;
   sum.getCell("A2").font = { color: { argb: "FF64748B" }, size: 10 };
   const head = sum.getRow(4);
-  head.values = ["Product", "Returns", "Units", "Faulty", "Faulty %", "Value £", "Top reason"];
+  head.values = ["Product", "Refund status", "Returns", "Units", "Faulty", "Faulty %", "Value £", "Top reason"];
   head.eachCell((c) => {
     c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
     c.fill = headerFill;
@@ -95,19 +119,24 @@ export async function buildReturnsExport(opts: {
     c.alignment = { vertical: "middle" };
   });
   sorted.forEach((p, i) => {
-    const top = [...p.reasons.entries()].sort((a, b) => b[1] - a[1])[0];
-    const row = sum.addRow([
-      p.key, p.returns.size, p.units, p.faulty || "", p.units ? p.faulty / p.units : 0,
-      Math.round(p.value), top ? `${top[0]} (${top[1]})` : "",
-    ]);
-    row.eachCell((c) => { c.border = border; c.font = { size: 10 }; });
-    if (i % 2 === 1) row.eachCell((c) => { c.fill = bandFill; });
-    row.getCell(5).numFmt = "0%";
-    row.getCell(6).numFmt = "#,##0";
-    if (p.faulty > 0) row.getCell(4).font = { size: 10, bold: true, color: { argb: ROSE } };
-    if (p.units >= 5 && p.faulty / p.units >= 0.5) row.getCell(5).font = { size: 10, bold: true, color: { argb: ROSE } };
+    // One row per refund status the product actually has (usually two).
+    const parts = ([["Refunded", p.split.refunded], ["To be refunded", p.split.pending]] as const).filter(([, s]) => s.units > 0);
+    for (const [label, s] of parts) {
+      const top = [...s.reasons.entries()].sort((a, b) => b[1] - a[1])[0];
+      const row = sum.addRow([
+        p.key, label, s.returns.size, s.units, s.faulty || "", s.units ? s.faulty / s.units : 0,
+        Math.round(s.value), top ? `${top[0]} (${top[1]})` : "",
+      ]);
+      row.eachCell((c) => { c.border = border; c.font = { size: 10 }; });
+      if (i % 2 === 1) row.eachCell((c) => { c.fill = bandFill; });
+      row.getCell(2).font = { size: 10, color: { argb: label === "Refunded" ? "FF059669" : "FFB45309" } };
+      row.getCell(6).numFmt = "0%";
+      row.getCell(7).numFmt = "#,##0";
+      if (s.faulty > 0) row.getCell(5).font = { size: 10, bold: true, color: { argb: ROSE } };
+      if (s.units >= 5 && s.faulty / s.units >= 0.5) row.getCell(6).font = { size: 10, bold: true, color: { argb: ROSE } };
+    }
   });
-  sum.autoFilter = { from: "A4", to: "G4" };
+  sum.autoFilter = { from: "A4", to: "H4" };
 
   // ---------- Reason-mix pivot (product level, no sizes) ----------
   const nR = reasonCols.length;
