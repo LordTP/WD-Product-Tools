@@ -1,151 +1,114 @@
 "use client";
 
-// Merch overview dashboard. Reads the LOCAL PO cache (no API) and derives metrics
-// from PO headers (value on order, open POs, overdue, status/vendor breakdowns).
-// Unit-level / receiving stats come later once line items are fully synced.
+// Dashboard — the morning briefing (per the approved mockup). One cache-only
+// fetch (/api/dashboard) renders: the day so far · the PO position (tiles that
+// deep-link into PO History pre-filtered) · landing weeks · receiving in
+// transit · needs attention · returns week · value by expected month.
+// Sync queues the po/returns/ops jobs through the shared sync registry.
 
-import { useEffect, useState, useCallback } from "react";
-import type { PoSummary } from "@/lib/shiphero/po-pull";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { SizeMap } from "@/lib/sizes";
+import type { AttnRow, DashboardData, RecvRow } from "@/lib/dashboard-types";
 import { PoBreakdownModal } from "./po-breakdown-modal";
 
-// Statuses that aren't "open" — Delivered has landed, so it's excluded from all
-// open/on-order KPIs, breakdowns and the receiving panel (same as closed/cancelled).
-const DONE = ["closed", "canceled", "cancelled", "delivered"];
-const isOpen = (p: PoSummary) => !DONE.includes(p.status.trim().toLowerCase());
-const gbp = (n: number) =>
-  "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const num = (s: string | null) => Number(s ?? 0) || 0;
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const daysBetween = (a: string, b: string) =>
-  Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
+const gbp = (n: number) => "£" + Math.round(n).toLocaleString("en-GB");
+const gbpK = (n: number) => (n >= 100_000 ? `£${Math.round(n / 1000)}k` : gbp(n));
+const fmt = (n: number) => n.toLocaleString("en-GB");
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never";
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 90) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+function ukDateLine(): string {
+  const now = new Date();
+  const day = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/London" }).format(now);
+  // ISO week number
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const week = Math.ceil((((d.getTime() - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86_400_000) + 1) / 7);
+  return `${day} · week ${week}`;
+}
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthLabel = (ym: string) => MONTHS_SHORT[Number(ym.slice(5, 7)) - 1] ?? ym;
 
 export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: boolean; sizeMap: SizeMap }) {
-  const [pos, setPos] = useState<PoSummary[] | null>(null);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<PoSummary | null>(null);
+  const [selected, setSelected] = useState<RecvRow | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/po/list?mappedOnly=1");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load.");
-      setPos(data.pos);
-      setLastSyncedAt(data.lastSyncedAt);
+      const res = await fetch("/api/dashboard");
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Failed to load.");
+      setData(d);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load.");
     }
   }, []);
 
-  // fetch-on-mount: invoked from an async callback so the React Compiler lint
-  // (set-state-in-effect) sees no synchronous setState in the effect body.
   useEffect(() => {
     void (async () => { await load(); })();
   }, [load]);
 
-  async function sync(full = false) {
+  async function sync() {
     if (!shipheroConnected) return;
     setSyncing(true);
-    setError(null);
+    setSyncMsg(null);
     try {
-      const res = await fetch("/api/po/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ since: "2024-01-01", full }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sync failed.");
+      // All three go through the shared queue server-side (one at a time).
+      const results = await Promise.allSettled([
+        fetch("/api/po/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ since: "2025-01-01" }) }),
+        fetch("/api/returns-hub/sync", { method: "POST" }),
+        fetch("/api/ops/sync", { method: "POST" }),
+      ]);
+      const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.ok)).length;
+      setSyncMsg(failed ? `${3 - failed}/3 synced` : "all fresh");
       await load();
-      setLastSyncedAt(data.syncedAt); // reflect the run even if 0 changed
-      setSyncMsg(data.count > 0 ? `${data.count} PO${data.count === 1 ? "" : "s"} updated` : "up to date");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Sync failed.");
     } finally {
       setSyncing(false);
     }
   }
 
-  // --- derive metrics (from cached headers) ---
-  const all = pos ?? [];
-  const open = all.filter(isOpen);
-  const today = todayISO();
-  const overdue = open
-    .filter((p) => p.poDate && p.poDate.slice(0, 10) < today && p.status.toLowerCase() !== "delivered")
-    .map((p) => ({ ...p, daysLate: daysBetween(p.poDate!.slice(0, 10), today) }))
-    .sort((a, b) => b.daysLate - a.daysLate);
-  const onOrderValue = open.reduce((a, p) => a + num(p.totalPrice), 0);
-
-  // Units + receiving (from synced line items)
-  const openOrdered = open.reduce((a, p) => a + p.unitsOrdered, 0);
-  const openReceived = open.reduce((a, p) => a + p.unitsReceived, 0);
-  const outstanding = Math.max(openOrdered - openReceived, 0);
-  // Receiving panel: only POs whose status is "In transit" (actually on their way).
-  const receiving = open
-    .filter((p) => p.unitsOrdered > 0 && p.status.trim().toLowerCase() === "in transit")
-    .map((p) => {
-      const pct = Math.round((p.unitsReceived / p.unitsOrdered) * 100);
-      const state = p.unitsReceived === 0 ? "awaiting" : p.unitsReceived >= p.unitsOrdered ? "complete" : "part";
-      return { ...p, pct, state };
-    })
-    // in-progress first, then awaiting, then fully booked in; most-received first within each.
-    .sort((a, b) => {
-      const rank = (s: string) => (s === "part" ? 0 : s === "awaiting" ? 1 : 2);
-      return rank(a.state) - rank(b.state) || b.pct - a.pct;
-    });
-  const awaitingCount = receiving.filter((p) => p.state === "awaiting").length;
-  const partCount = receiving.filter((p) => p.state === "part").length;
-  const completeCount = receiving.filter((p) => p.state === "complete").length;
-  // Totals for the panel bar (in-transit POs only).
-  const transitOrdered = receiving.reduce((a, p) => a + p.unitsOrdered, 0);
-  const transitReceived = receiving.reduce((a, p) => a + p.unitsReceived, 0);
-  const transitPct = transitOrdered ? Math.round((transitReceived / transitOrdered) * 100) : 0;
-
-  // Upcoming deliveries: open POs whose expected date is today or later.
-  const upcoming = open
-    .filter((p) => p.poDate && p.poDate.slice(0, 10) >= today)
-    .map((p) => ({ ...p, daysUntil: daysBetween(today, p.poDate!.slice(0, 10)) }))
-    .sort((a, b) => a.daysUntil - b.daysUntil);
-  const landingSoon = upcoming.filter((p) => p.daysUntil <= 14).length;
-
-  const byStatus = groupBy(open, (p) => p.status || "—");
-  const byVendor = groupBy(open, (p) => p.vendorName || "—");
-  const maxStatusValue = Math.max(1, ...byStatus.map((g) => g.value));
-
-  // Order value by expected month (all cached POs), chronological, last 8.
-  const byMonth = [...groupBy(all, (p) => (p.poDate ? p.poDate.slice(0, 7) : "—"))]
-    .filter((g) => g.key !== "—")
-    .sort((a, b) => a.key.localeCompare(b.key))
-    .slice(-8);
-  const maxMonthValue = Math.max(1, ...byMonth.map((g) => g.value));
+  const t = data?.today;
+  const p = data?.poPosition;
+  const jobAt = (key: string) => data?.jobs.find((j) => j.key === key)?.at ?? null;
+  const maxWeek = Math.max(1, ...(data?.weeks ?? []).map((w) => w.units));
+  const maxMonth = Math.max(1, ...(data?.months ?? []).map((m) => m.value));
+  const maxReason = Math.max(1, ...(data?.returnsWeek.reasons ?? []).map((r) => r.units));
+  const spark = t?.shippedByHour?.slice(6, 21) ?? [];
+  const maxSpark = Math.max(1, ...spark);
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-5 shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <span className="font-semibold text-sm text-slate-900">Dashboard</span>
-          <span className="hidden sm:inline text-xs text-slate-400">purchase orders overview</span>
+          <span className="hidden sm:inline text-xs text-slate-400 truncate">{ukDateLine()}</span>
         </div>
         <div className="flex items-center gap-3">
-          {lastSyncedAt && (
-            <span className="text-[11px] text-slate-400">
-              synced {timeAgo(lastSyncedAt)}{syncMsg && <span className="text-emerald-600"> · {syncMsg}</span>}
+          {data && (
+            <span className="hidden md:inline text-[11px] text-slate-400">
+              POs {timeAgo(jobAt("po"))} · returns {timeAgo(jobAt("returns"))} · orders {timeAgo(jobAt("ops"))}
+              {syncMsg && <span className="text-emerald-600"> · {syncMsg}</span>}
             </span>
           )}
           <button
-            onClick={() => sync(true)}
+            onClick={() => void sync()}
             disabled={syncing || !shipheroConnected}
-            title="Re-pull every PO from ShipHero (slower; use after admin changes or a first setup)"
-            className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Full resync
-          </button>
-          <button
-            onClick={() => sync(false)}
-            disabled={syncing || !shipheroConnected}
-            title="Pull only POs changed since the last sync (fast)"
+            title="Refresh POs, returns and the order well (queued, incremental)"
             className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 ${
               shipheroConnected ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"
             } disabled:opacity-60`}
@@ -158,165 +121,153 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-5 space-y-4 sm:space-y-5">
+      <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-5 space-y-4">
         {error && <div className="text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded p-2">{error}</div>}
+        {!data && !error && <div className="text-center py-16 text-sm text-slate-400">Loading the briefing…</div>}
 
-        {pos && all.length === 0 ? (
-          <div className="text-center py-16 text-sm text-slate-400">
-            No POs cached yet — click <span className="font-medium text-slate-600">Sync</span> to pull them from ShipHero.
-          </div>
-        ) : (
+        {data && t && p && (
           <>
-            {/* KPI cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <Card label="Open POs" value={open.length} />
-              <Card label="Units on order" value={outstanding.toLocaleString()} sub="still to arrive" />
-              <Card label="Value on order" value={gbp(onOrderValue)} accent="indigo" />
-              <Card
-                label="Landing ≤14 days"
-                value={landingSoon}
-                accent={landingSoon > 0 ? "indigo" : "slate"}
-                sub={landingSoon > 0 ? "arriving soon" : "none imminent"}
-              />
-              <Card
-                label="Overdue"
-                value={overdue.length}
-                accent={overdue.length > 0 ? "rose" : "slate"}
-                sub={overdue.length > 0 ? "past expected date" : "all on track"}
-              />
+            {/* 1 · today */}
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+              <Tile href="/order-well" label="Shipped today" go="Order Well ›">
+                <Big v={t.shippedOrders === null ? "—" : fmt(t.shippedOrders)} small={t.shippedOrders === null ? "no scan yet" : `orders · ${fmt(t.shippedUnits)} units`} />
+                {spark.length > 0 && (
+                  <div className="flex items-end gap-[3px] h-8 mt-2">
+                    {spark.map((v, i) => (
+                      <div key={i} title={`${i + 6}:00 — ${v}`} className={`flex-1 rounded-sm ${i === spark.length - 1 ? "bg-indigo-500" : "bg-indigo-200"}`} style={{ height: `${Math.max(8, (v / maxSpark) * 100)}%` }} />
+                    ))}
+                  </div>
+                )}
+                <Sub>by hour, 6am → 8pm</Sub>
+              </Tile>
+              <Tile href="/order-well" label="Open orders" go="Order Well ›">
+                <Big v={fmt(t.totalOpen)} />
+                <Sub><b className="text-slate-600">{fmt(t.readyTotal)}</b> ready to pick · <b className="text-slate-600">{fmt(t.waitingTotal)}</b> waiting on stock</Sub>
+                {t.oldestReady && <Sub>oldest ready <b className="text-slate-600">{t.oldestReady.ageDays}d</b> · {t.oldestReady.lane}</Sub>}
+              </Tile>
+              <Tile href="/order-well" label="Due on today's vans" go="Order Well ›">
+                <Big v={fmt(t.dueDhl + t.dueRm)} small="orders" />
+                <Sub>DHL <b className="text-slate-600">{fmt(t.dueDhl)}</b> (van 3:30pm) · RM <b className="text-slate-600">{fmt(t.dueRm)}</b> (5:30pm)</Sub>
+              </Tile>
+              <Tile href="/returns" label="Returns" go="Returns ›">
+                <Big v={fmt(t.returnsOpenedToday)} small="opened today" />
+                <Sub>this week <b className="text-slate-600">{fmt(t.returnsOpenedWeek)}</b> opened · <b className="text-slate-600">{fmt(t.returnsProcessedWeek)}</b> processed</Sub>
+              </Tile>
             </div>
 
-            {/* Receiving progress — POs currently In transit */}
-            <Panel title="Receiving — POs in transit">
-              {receiving.length === 0 ? (
-                <p className="text-xs text-slate-400">No POs currently in transit.</p>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-xs font-semibold text-slate-700">
-                      {transitReceived.toLocaleString()} / {transitOrdered.toLocaleString()} units received
-                    </span>
-                    <div className="flex-1 h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${transitPct >= 100 ? "bg-emerald-500" : "bg-indigo-500"}`}
-                        style={{ width: `${Math.min(transitPct, 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-medium text-slate-500 tabular-nums">{transitPct}%</span>
-                  </div>
-                  <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mb-2 text-[11px] text-slate-500">
-                    <span className="font-medium text-slate-600">{receiving.length} in transit</span>
-                    {partCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400" />{partCount} part-received</span>}
-                    {awaitingCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300" />{awaitingCount} awaiting</span>}
-                    {completeCount > 0 && <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />{completeCount} booked in</span>}
-                  </div>
-                  <div className="-mx-1 px-1 divide-y divide-slate-50">
-                      {receiving.map((p) => (
-                        <button
-                          key={p.poNumber}
-                          onClick={() => setSelected(p)}
-                          title="View receiving breakdown"
-                          className="w-full flex items-center gap-2 text-xs py-1 px-1 -mx-1 rounded hover:bg-indigo-50/60 text-left"
-                        >
-                          <span className="font-mono text-slate-500 w-16 shrink-0">{p.poNumber}</span>
-                          <span className="text-slate-600 truncate flex-1 min-w-0">{p.products[0] ?? "—"}</span>
-                          <span className="tabular-nums text-slate-500 w-16 text-right shrink-0">{p.unitsReceived.toLocaleString()}/{p.unitsOrdered.toLocaleString()}</span>
-                          <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden shrink-0">
-                            <div
-                              className={`h-full ${p.state === "complete" ? "bg-emerald-400" : p.state === "awaiting" ? "bg-slate-300" : "bg-indigo-400"}`}
-                              style={{ width: `${p.pct}%` }}
-                            />
-                          </div>
-                          <span className="tabular-nums text-slate-400 w-9 text-right shrink-0">{p.pct}%</span>
-                        </button>
-                      ))}
-                  </div>
-                </>
-              )}
-            </Panel>
+            {/* 2 · PO position */}
+            <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+              <Tile href="/history" label="Value on order" go="POs ›">
+                <Big v={gbpK(p.valueOnOrder)} />
+                <Sub>{p.openCount} open POs · {p.vendorCount} vendor{p.vendorCount === 1 ? "" : "s"}</Sub>
+              </Tile>
+              <Tile href="/history" label="Units to come" go="POs ›">
+                <Big v={fmt(p.unitsToCome)} />
+                <Sub>across {p.datedCount} dated POs</Sub>
+              </Tile>
+              <Tile href="/history?win=14" label="Landing ≤ 14 days" go="POs ›">
+                <Big v={fmt(p.landing14Units)} small="units" />
+                <Sub>{p.landing14Pos} PO{p.landing14Pos === 1 ? "" : "s"} expected</Sub>
+              </Tile>
+              <Tile href="/history?win=overdue" label="Past expected date" go="POs ›" tone={p.overdueCount > 0 ? "bad" : undefined}>
+                <Big v={fmt(p.overdueCount)} small="POs" tone={p.overdueCount > 0 ? "bad" : undefined} />
+                <Sub>{p.overdueCount > 0 ? `${fmt(p.overdueUnits)} units late · worst ${p.overdueWorstDays} days` : "all on track"}</Sub>
+              </Tile>
+              <Tile href="/history?missing=1" label="Missing dates" go="POs ›" tone={p.missingCount > 0 ? "warn" : undefined}>
+                <Big v={fmt(p.missingCount)} small="POs" tone={p.missingCount > 0 ? "warn" : undefined} />
+                <Sub>{p.missingCount > 0 ? "no ex-factory or expected date yet" : "everything dated"}</Sub>
+              </Tile>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* Status breakdown */}
-              <Panel title="Open POs by status">
-                {byStatus.length === 0 ? (
-                  <Empty />
+            {/* 3 · landing weeks + receiving + attention */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <Panel title="Landing — next 4 weeks" go={{ href: "/calendar", label: "Calendar ›" }}>
+                <div className="space-y-2">
+                  {data.weeks.map((w) => (
+                    <Link key={w.label} href={w.href} className="grid grid-cols-[92px_1fr_110px] gap-2.5 items-center text-xs rounded hover:bg-indigo-50/60 py-0.5">
+                      <span className="text-slate-600">{w.label}{w.sub && <span className="block text-[10px] text-slate-400">{w.sub}</span>}</span>
+                      <span className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                        <span className={`block h-full rounded-full ${w.late ? "bg-rose-500" : "bg-indigo-500"}`} style={{ width: `${Math.min(100, (w.units / maxWeek) * 100)}%` }} />
+                      </span>
+                      <span className="text-right tabular-nums text-slate-600">{fmt(w.units)} <span className="text-slate-400">u · {w.pos} POs</span></span>
+                    </Link>
+                  ))}
+                </div>
+              </Panel>
+
+              <Panel title="Receiving — in transit" go={{ href: "/history?status=In%20transit", label: "All ›" }}>
+                {data.receiving.length === 0 ? (
+                  <p className="text-xs text-slate-400">No POs currently in transit.</p>
+                ) : (
+                  <div className="divide-y divide-slate-50 -my-1">
+                    {data.receiving.map((r) => (
+                      <button key={r.po.poNumber} onClick={() => setSelected(r)} title="Receiving breakdown" className="w-full grid grid-cols-[58px_1fr_92px] gap-2.5 items-center py-1.5 text-xs text-left hover:bg-indigo-50/60 rounded">
+                        <span className="font-mono font-semibold text-slate-700">{r.po.poNumber}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-slate-600">{r.po.products[0] ?? "—"}</span>
+                          <span className="block h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                            <span className={`block h-full rounded-full ${r.state === "over" ? "bg-rose-500" : r.state === "complete" ? "bg-emerald-500" : r.state === "awaiting" ? "bg-slate-300" : "bg-indigo-500"}`} style={{ width: `${Math.max(r.state === "awaiting" ? 0 : 4, r.pct)}%` }} />
+                          </span>
+                        </span>
+                        <span className="text-right tabular-nums text-slate-600">
+                          {fmt(r.po.unitsReceived)} / {fmt(r.po.unitsOrdered)}
+                          <span className={`block text-[10px] ${r.state === "over" ? "text-rose-600" : r.state === "complete" ? "text-emerald-600" : "text-slate-400"}`}>
+                            {r.state === "over" ? `+${fmt(r.po.unitsReceived - r.po.unitsOrdered)} over` : r.state === "complete" ? "done — close it" : r.state === "awaiting" ? "awaiting" : "booking in"}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel title="Needs attention">
+                {data.attention.length === 0 ? (
+                  <p className="text-xs text-emerald-600">Nothing needs attention. 🎉</p>
+                ) : (
+                  <div className="divide-y divide-slate-50 -my-1">
+                    {data.attention.map((a, i) => <AttnLine key={i} a={a} />)}
+                  </div>
+                )}
+              </Panel>
+            </div>
+
+            {/* 4 · returns week + value by month */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <Panel title="Returns — last 7 days" go={{ href: "/returns", label: "Returns ›" }}>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 mb-3">
+                  <span><b className="text-slate-800 tabular-nums">{fmt(data.returnsWeek.opened)}</b> opened</span>
+                  <span><b className="text-slate-800 tabular-nums">{fmt(data.returnsWeek.processed)}</b> processed</span>
+                  <span><b className="text-slate-800 tabular-nums">{gbpK(data.returnsWeek.valueOpen)}</b> in the post</span>
+                  <span><b className="text-slate-800 tabular-nums">{data.returnsWeek.faultyPct}%</b> faulty</span>
+                </div>
+                {data.returnsWeek.reasons.length === 0 ? (
+                  <p className="text-xs text-slate-400">No returns opened this week.</p>
                 ) : (
                   <div className="space-y-2">
-                    {byStatus.map((g) => (
-                      <div key={g.key} className="flex items-center gap-2 sm:gap-3 text-xs">
-                        <span className="w-24 sm:w-36 truncate text-slate-600">{g.key}</span>
-                        <div className="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
-                          <div className="h-full bg-indigo-400/80" style={{ width: `${(g.value / maxStatusValue) * 100}%` }} />
-                        </div>
-                        <span className="w-8 text-right tabular-nums text-slate-500">{g.count}</span>
-                        <span className="w-16 sm:w-20 text-right tabular-nums font-medium text-slate-700">{gbp(g.value)}</span>
+                    {data.returnsWeek.reasons.map((r) => (
+                      <div key={r.key} className="grid grid-cols-[128px_1fr_64px] gap-2.5 items-center text-xs">
+                        <span className="truncate text-slate-600">{r.key}</span>
+                        <span className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <span className="block h-full rounded-full bg-indigo-400" style={{ width: `${(r.units / maxReason) * 100}%` }} />
+                        </span>
+                        <span className="text-right tabular-nums text-slate-500">{r.units} · {r.pct}%</span>
                       </div>
                     ))}
                   </div>
                 )}
               </Panel>
 
-              {/* Vendor breakdown */}
-              <Panel title="Open POs by vendor">
-                {byVendor.length === 0 ? (
-                  <Empty />
-                ) : (
-                  <table className="w-full text-xs">
-                    <tbody>
-                      {byVendor.map((g) => (
-                        <tr key={g.key} className="border-b border-slate-50 last:border-0">
-                          <td className="py-1.5 text-slate-700 truncate max-w-[16rem]">{g.key}</td>
-                          <td className="py-1.5 text-right tabular-nums text-slate-500 w-12">{g.count}</td>
-                          <td className="py-1.5 text-right tabular-nums font-medium text-slate-700 w-24">{gbp(g.value)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Panel>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* Upcoming deliveries */}
-              <Panel title="Upcoming deliveries">
-                {upcoming.length === 0 ? (
-                  <p className="text-xs text-slate-400">No open POs with a future expected date.</p>
-                ) : (
-                  <table className="w-full text-xs">
-                    <tbody>
-                      {upcoming.slice(0, 8).map((p) => (
-                        <tr key={p.poNumber} className="border-b border-slate-50 last:border-0">
-                          <td className="py-1.5 font-mono text-slate-700">{p.poNumber}</td>
-                          <td className="py-1.5 text-slate-600 truncate max-w-[12rem]">{p.products[0] ?? "—"}</td>
-                          <td className="py-1.5 font-mono text-slate-500 w-24">{p.poDate?.slice(0, 10)}</td>
-                          <td className="py-1.5 text-right w-20">
-                            <span className={`tabular-nums ${p.daysUntil <= 14 ? "text-indigo-600 font-medium" : "text-slate-400"}`}>
-                              {p.daysUntil === 0 ? "today" : `in ${p.daysUntil}d`}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Panel>
-
-              {/* Order value by month */}
-              <Panel title="Order value by month">
-                {byMonth.length === 0 ? (
-                  <Empty />
+              <Panel title="Order value by expected month">
+                {data.months.length === 0 ? (
+                  <p className="text-xs text-slate-400">No dated POs yet.</p>
                 ) : (
                   <div className="flex items-end gap-2 h-32 pt-2">
-                    {byMonth.map((g) => (
-                      <div key={g.key} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                        <span className="text-[9px] text-slate-400 tabular-nums">{gbp(g.value)}</span>
-                        <div className="w-full bg-slate-100 rounded-t flex items-end" style={{ height: "100%" }}>
-                          <div
-                            className="w-full bg-indigo-400/80 rounded-t"
-                            style={{ height: `${(g.value / maxMonthValue) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-[9px] text-slate-500">{monthLabel(g.key)}</span>
+                    {data.months.map((m) => (
+                      <div key={m.ym} className="flex-1 flex flex-col items-center justify-end gap-1 h-full min-w-0 group" title={`${monthLabel(m.ym)} — ${gbp(m.value)} · ${m.pos} POs`}>
+                        <span className={`text-[9px] tabular-nums ${m.current ? "text-slate-600" : "text-slate-400 invisible group-hover:visible"}`}>{gbpK(m.value)}</span>
+                        <div className={`w-full max-w-11 rounded-t ${m.current ? "bg-indigo-500" : "bg-indigo-200 group-hover:bg-indigo-300"}`} style={{ height: `${Math.max(3, (m.value / maxMonth) * 78)}%` }} />
+                        <span className={`text-[9px] ${m.current ? "text-slate-700 font-semibold" : "text-slate-400"}`}>{monthLabel(m.ym)}</span>
                       </div>
                     ))}
                   </div>
@@ -324,118 +275,68 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
               </Panel>
             </div>
 
-            {/* Overdue list */}
-            <Panel title={`Overdue POs${overdue.length ? ` (${overdue.length})` : ""}`}>
-              {overdue.length === 0 ? (
-                <p className="text-xs text-emerald-600">Nothing overdue — every open PO is within its expected date. 🎉</p>
-              ) : (
-                <div className="overflow-x-auto -mx-1 px-1">
-                <table className="w-full min-w-[44rem] text-xs">
-                  <thead>
-                    <tr className="text-left text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
-                      <th className="font-medium py-1.5 pr-4">PO</th>
-                      <th className="font-medium py-1.5 pr-4">Product</th>
-                      <th className="font-medium py-1.5 pr-4">Vendor</th>
-                      <th className="font-medium py-1.5 pr-4">Status</th>
-                      <th className="font-medium py-1.5 pr-4">Expected</th>
-                      <th className="font-medium py-1.5 pr-4 text-right">Days late</th>
-                      <th className="font-medium py-1.5 text-right">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overdue.map((p) => (
-                      <tr key={p.poNumber} className="border-b border-slate-50 last:border-0">
-                        <td className="py-1.5 pr-4 font-mono text-slate-700">{p.poNumber}</td>
-                        <td className="py-1.5 pr-4 text-slate-600 truncate max-w-[16rem]">{p.products[0] ?? "—"}</td>
-                        <td className="py-1.5 pr-4 text-slate-500 truncate max-w-[12rem]">{p.vendorName ?? "—"}</td>
-                        <td className="py-1.5 pr-4 text-slate-500">{p.status}</td>
-                        <td className="py-1.5 pr-4 font-mono text-slate-500">{p.poDate?.slice(0, 10)}</td>
-                        <td className="py-1.5 pr-4 text-right tabular-nums font-semibold text-rose-600">{p.daysLate}</td>
-                        <td className="py-1.5 text-right tabular-nums text-slate-700">{gbp(num(p.totalPrice))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
-            </Panel>
-
             <p className="text-[11px] text-slate-400">
-              Metrics from the local cache. Units & received update on Sync (and live via the receiving webhook).
+              Everything from the local caches — the background sync keeps them fresh; Sync forces a refresh now.
             </p>
           </>
         )}
       </div>
 
       {selected && (
-        <PoBreakdownModal key={selected.poNumber} po={selected} sizeMap={sizeMap} onClose={() => setSelected(null)} />
+        <PoBreakdownModal key={selected.po.poNumber} po={selected.po} sizeMap={sizeMap} onClose={() => setSelected(null)} />
       )}
     </div>
   );
 }
 
-function groupBy(pos: PoSummary[], key: (p: PoSummary) => string) {
-  const m = new Map<string, { count: number; value: number }>();
-  for (const p of pos) {
-    const k = key(p);
-    const cur = m.get(k) ?? { count: 0, value: 0 };
-    cur.count += 1;
-    cur.value += num(p.totalPrice);
-    m.set(k, cur);
-  }
-  return [...m.entries()]
-    .map(([key, v]) => ({ key, ...v }))
-    .sort((a, b) => b.value - a.value);
-}
+// ---- pieces ----
 
-function Card({
-  label,
-  value,
-  sub,
-  accent = "slate",
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  accent?: "slate" | "indigo" | "rose";
-}) {
-  const color =
-    accent === "indigo" ? "text-indigo-600" : accent === "rose" ? "text-rose-600" : "text-slate-900";
+function Tile({ href, label, go, tone, children }: { href: string; label: string; go: string; tone?: "bad" | "warn"; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-      {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
-    </div>
+    <Link href={href} className={`block bg-white rounded-xl border p-4 hover:border-indigo-300 hover:shadow-sm transition-colors group ${tone === "bad" ? "border-rose-200" : tone === "warn" ? "border-amber-200" : "border-slate-200"}`}>
+      <p className="text-[11px] uppercase tracking-wide text-slate-400 flex items-center justify-between">
+        {label}
+        <span className="normal-case tracking-normal text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity">{go}</span>
+      </p>
+      {children}
+    </Link>
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Big({ v, small, tone }: { v: string; small?: string; tone?: "bad" | "warn" }) {
+  const color = tone === "bad" ? "text-rose-600" : tone === "warn" ? "text-amber-600" : "text-slate-900";
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
-      <p className="text-xs font-semibold text-slate-700 mb-3">{title}</p>
+    <p className={`text-2xl font-bold mt-1 tabular-nums ${color}`}>
+      {v}{small && <span className="text-xs font-medium text-slate-400 ml-1.5">{small}</span>}
+    </p>
+  );
+}
+
+function Sub({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] text-slate-400 mt-0.5">{children}</p>;
+}
+
+function Panel({ title, go, children }: { title: string; go?: { href: string; label: string }; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 min-w-0">
+      <p className="text-xs font-semibold text-slate-700 mb-3 flex items-center justify-between">
+        {title}
+        {go && <Link href={go.href} className="text-[11px] font-normal text-indigo-500 hover:underline">{go.label}</Link>}
+      </p>
       {children}
     </div>
   );
 }
 
-function Empty() {
-  return <p className="text-xs text-slate-400">No open POs.</p>;
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-");
-  const idx = Number(m) - 1;
-  return `${MONTHS[idx] ?? m} ${(y ?? "").slice(2)}`;
-}
-
-function timeAgo(iso: string): string {
-  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (secs < 60) return "just now";
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
+function AttnLine({ a }: { a: AttnRow }) {
+  const dot = a.sev === "bad" ? "bg-rose-500" : a.sev === "warn" ? "bg-amber-500" : "bg-indigo-400";
+  const body = (
+    <>
+      <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+      <span className="text-slate-600 min-w-0 flex-1"><b className="text-slate-800">{a.strong}</b> {a.text}</span>
+      {a.cta && <span className="text-[11px] text-indigo-500 whitespace-nowrap shrink-0">{a.cta}</span>}
+    </>
+  );
+  if (!a.cta || a.href === "#") return <div className="flex items-center gap-2.5 py-1.5 text-xs">{body}</div>;
+  return <Link href={a.href} className="flex items-center gap-2.5 py-1.5 text-xs hover:bg-indigo-50/60 rounded group">{body}</Link>;
 }
