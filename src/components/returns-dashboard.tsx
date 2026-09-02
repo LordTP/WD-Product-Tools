@@ -431,9 +431,14 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                   </span>
                 ))}
               </div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Open returns by age — all open right now, any window</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Open returns right now — any window</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
+                <span><b className="tabular-nums text-slate-800">{summary.openNow.count}</b> open · <b className="tabular-nums text-slate-800">£{summary.openNow.value.toLocaleString("en-GB")}</b></span>
+                <span><b className="tabular-nums text-slate-800">{summary.openNow.inPost}</b> in the post · £{summary.openNow.inPostValue.toLocaleString("en-GB")}</span>
+                <span><b className="tabular-nums text-slate-800">{summary.openNow.atDesk}</b> at the desk · £{summary.openNow.atDeskValue.toLocaleString("en-GB")}</span>
+              </div>
               {summary.pipeline.map((p, i) => (
-                <div key={p.bucket} className="grid grid-cols-[90px_1fr_36px] gap-2.5 items-center mb-2 text-xs">
+                <div key={p.bucket} className="grid grid-cols-[90px_1fr_36px_64px] gap-2.5 items-center mb-2 text-xs">
                   <span className="text-slate-500">{p.bucket}</span>
                   <span className="h-3.5 bg-slate-100 rounded overflow-hidden">
                     <span
@@ -445,10 +450,11 @@ export function ReturnsDashboard({ shipheroConnected }: { shipheroConnected: boo
                     />
                   </span>
                   <span className="text-right tabular-nums text-[13px] text-slate-900">{p.count}</span>
+                  <span className="text-right tabular-nums text-slate-500">£{p.value.toLocaleString("en-GB")}</span>
                 </div>
               ))}
               <p className="text-[11px] text-slate-400 mt-2">
-                {summary.pipeline.reduce((a, p) => a + p.count, 0)} returns in the post or awaiting the desk.
+                “At the desk” = some units already scanned in. ShipHero can’t see carrier tracking, so in-transit vs delivered isn’t splittable — that lives in Swap.
               </p>
             </Panel>
 

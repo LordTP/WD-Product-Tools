@@ -85,7 +85,11 @@ export interface ReturnsSummary {
   avgTurnaroundDays: number | null; // created → first receive-ish event (event in window)
   reasons: Counted[];
   outcomes: Counted[]; // Exchange vs Refund/credit (Swap doesn't split credit)
-  pipeline: { bucket: string; count: number }[]; // ALL open returns by age (window-independent)
+  pipeline: { bucket: string; count: number; value: number }[]; // ALL open returns by age (window-independent), value = ex-VAT still to receive
+  /** Every open v2 return RIGHT NOW (window-independent): counts + ex-VAT value
+   *  still to receive, split "at the desk" (some units scanned in) vs "in the
+   *  post" (nothing scanned yet — ShipHero has no carrier transit/delivered). */
+  openNow: { count: number; units: number; value: number; atDesk: number; atDeskValue: number; inPost: number; inPostValue: number };
   topProducts: Counted[];
   /** Products with faulty units in the window: units faulty + total returned
    *  (any reason) so concentration is visible. */
@@ -152,7 +156,8 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
   const products = new Map<string, number>();
   const faultyByProduct = new Map<string, number>();
   const turnarounds: number[] = [];
-  const pipeline = { "0–7 days": 0, "7–14 days": 0, "14+ days": 0 };
+  const pipeline = { "0–7 days": { count: 0, value: 0 }, "7–14 days": { count: 0, value: 0 }, "14+ days": { count: 0, value: 0 } };
+  const openNow = { count: 0, units: 0, value: 0, atDesk: 0, atDeskValue: 0, inPost: 0, inPostValue: 0 };
   const people = new Map<string, { returns: Set<string>; events: { at: string }[] }>();
   const openedByDay = new Map<string, number>();
   const processedByDay = new Map<string, number>();
@@ -186,9 +191,15 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
     // really in the post, so they never belong here even when unhidden.
     if (isOpen(r) && r.isV2) {
       const ageDays = (now - new Date(r.createdAt).getTime()) / 86_400_000;
-      if (ageDays <= 7) pipeline["0–7 days"]++;
-      else if (ageDays <= 14) pipeline["7–14 days"]++;
-      else pipeline["14+ days"]++;
+      const openValue = r.items.reduce((a, it) => a + Math.max(0, it.quantity - it.received) * it.price, 0) * (r.exVatFactor ?? 1 / 1.2);
+      const bucket = ageDays <= 7 ? "0–7 days" : ageDays <= 14 ? "7–14 days" : "14+ days";
+      pipeline[bucket].count++;
+      pipeline[bucket].value += openValue;
+      openNow.count++;
+      openNow.units += Math.max(0, r.expected - r.received);
+      openNow.value += openValue;
+      if (r.received > 0) { openNow.atDesk++; openNow.atDeskValue += openValue; }
+      else { openNow.inPost++; openNow.inPostValue += openValue; }
     }
 
     // Processing: keyed off event time.
@@ -276,7 +287,8 @@ export function deriveSummary(rows: ReturnRow[], fromIso: string, toIso: string,
       { key: "Refund / credit", units: total - exchanges },
       { key: "Exchange", units: exchanges },
     ],
-    pipeline: Object.entries(pipeline).map(([bucket, count]) => ({ bucket, count })),
+    pipeline: Object.entries(pipeline).map(([bucket, v]) => ({ bucket, count: v.count, value: Math.round(v.value) })),
+    openNow: { ...openNow, value: Math.round(openNow.value), atDeskValue: Math.round(openNow.atDeskValue), inPostValue: Math.round(openNow.inPostValue) },
     topProducts: sortCounted(products).slice(0, 8),
     faultyProducts: [...faultyByProduct.entries()]
       .map(([key, units]) => ({ key, units, totalReturned: products.get(key) ?? units }))
