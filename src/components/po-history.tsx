@@ -837,6 +837,10 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
             <div className="px-5 py-3.5 border-b border-slate-200">
               <h3 className="text-sm font-semibold text-slate-900">Set status to “{statusConfirm.status}”</h3>
               <p className="text-xs text-slate-500 mt-0.5">{statusConfirm.poNumbers.length} PO{statusConfirm.poNumbers.length === 1 ? "" : "s"} — writes to ShipHero, one PO at a time</p>
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mt-2">
+                Heads up: ShipHero also stamps this status onto every <b>line</b> of each PO. That clears the sell-ahead pool
+                on preorder POs whose stock hasn&apos;t arrived yet — fine for POs that are already booked in.
+              </p>
             </div>
             <div className="px-5 py-3 overflow-y-auto text-xs font-mono text-slate-700 flex flex-wrap gap-x-3 gap-y-1">
               {statusConfirm.poNumbers.map((n) => <span key={n}>{n}</span>)}
