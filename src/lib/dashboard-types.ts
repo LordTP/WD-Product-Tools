@@ -14,6 +14,9 @@ export interface TodayStrip {
   dueDhl: number;
   dueRm: number;
   oldestReady: { orderNumber: string; ageDays: number; lane: string } | null;
+  returnsProcessedToday: number;
+  /** Retail value (ex VAT) of return units received today. */
+  returnsProcessedTodayValue: number;
   returnsOpenedToday: number;
   returnsOpenedWeek: number;
   returnsProcessedWeek: number;

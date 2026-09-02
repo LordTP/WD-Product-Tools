@@ -149,9 +149,10 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
                 <Big v={fmt(t.dueDhl + t.dueRm)} small="orders" />
                 <Sub>DHL <b className="text-slate-600">{fmt(t.dueDhl)}</b> (van 3:30pm) · RM <b className="text-slate-600">{fmt(t.dueRm)}</b> (5:30pm)</Sub>
               </Tile>
-              <Tile href="/returns" label="Returns" go="Returns ›">
-                <Big v={fmt(t.returnsOpenedToday)} small="opened today" />
-                <Sub>this week <b className="text-slate-600">{fmt(t.returnsOpenedWeek)}</b> opened · <b className="text-slate-600">{fmt(t.returnsProcessedWeek)}</b> processed</Sub>
+              <Tile href="/returns" label="Returns processed today" go="Returns ›">
+                <Big v={fmt(t.returnsProcessedToday)} small={`· ${gbpK(t.returnsProcessedTodayValue)} value`} />
+                <Sub><b className="text-slate-600">{fmt(t.returnsOpenedToday)}</b> opened today</Sub>
+                <Sub>this week <b className="text-slate-600">{fmt(t.returnsProcessedWeek)}</b> processed · <b className="text-slate-600">{fmt(t.returnsOpenedWeek)}</b> opened</Sub>
               </Tile>
             </div>
 

@@ -5,7 +5,7 @@ import { getOpsStats } from "@/lib/ops-cache";
 import { listCachedReturns } from "@/lib/returns-cache";
 import { deriveSummary } from "@/lib/returns-types";
 import { syncStatus } from "@/lib/sync-registry";
-import { todayUkYmd, ukYmd } from "@/lib/uk-time";
+import { todayUkYmd, ukDayStartUtcNaive, ukYmd } from "@/lib/uk-time";
 import type { PoSummary } from "@/lib/shiphero/po-pull";
 import type { AttnRow, DashboardData, MonthBar, RecvRow, WeekRow } from "@/lib/dashboard-types";
 
@@ -112,6 +112,8 @@ export async function GET() {
     const nowIso = new Date().toISOString();
     const weekFromIso = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const rsum = deriveSummary(returnRows, weekFromIso, nowIso, nowIso);
+    // Today window matches the Returns page exactly (UK day start, naive UTC).
+    const rsumToday = deriveSummary(returnRows, ukDayStartUtcNaive(today), "9999-12-31T23:59:59", nowIso);
     const reasonTotal = Math.max(1, rsum.reasons.reduce((a, r) => a + r.units, 0));
     const returnsWeek = {
       opened: rsum.total,
@@ -151,6 +153,8 @@ export async function GET() {
         dueDhl: ops?.dueByCarrier?.dhl ?? 0,
         dueRm: ops?.dueByCarrier?.rm ?? 0,
         oldestReady: ops?.oldestReady ?? null,
+        returnsProcessedToday: rsumToday.processedReturns,
+        returnsProcessedTodayValue: Math.round(rsumToday.valueProcessed),
         returnsOpenedToday: returnRows.filter((r) => ukYmd(r.createdAt) === today).length,
         returnsOpenedWeek: rsum.total,
         returnsProcessedWeek: rsum.processedReturns,
