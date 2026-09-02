@@ -12,7 +12,7 @@ const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"] });
 const brand = localFont({ src: "./fonts/sinhala-mn-regular.woff2", variable: "--font-brand", weight: "400", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Wander Doll · Product Tools",
+  title: "Wander Doll | Product Tools",
   description: "Internal product & purchase-order tooling",
 };
 
