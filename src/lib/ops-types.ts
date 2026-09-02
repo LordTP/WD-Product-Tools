@@ -27,6 +27,8 @@ export interface OpsStats {
   /** Incremental shipped-today accumulator (internal — lets the next sync pull
    *  only shipments newer than the cursor). Shape owned by ops-pull. */
   shipScan?: unknown;
+  /** When the heavy open-order scan last ran (shipped-only refreshes reuse it). */
+  openScannedAt?: string;
   /** v2 (Order Well redraw) — all derived from the same scan. */
   lanes?: LaneRow[];
   ageBuckets?: AgeBucket[];

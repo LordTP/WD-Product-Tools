@@ -352,6 +352,31 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
     shippedByHour: shipped.byHour ?? [],
     shippedByHourCarrier: shipped.byHourCarrier,
     dueByCarrier,
+    openScannedAt: new Date().toISOString(),
     oldestReady: oldest ? { orderNumber: oldest.orderNumber, ageDays: Math.round(ageDaysOf(oldest) * 10) / 10, lane: laneFamily(oldest.lane).family } : null,
+  };
+}
+
+/** CHEAP refresh for the TV keep-warm: only shipped-today (incremental — a few
+ *  hundred credits), merged onto the previous snapshot. The heavy open-order
+ *  scan (~most of the credit pool) is reused, not re-run. */
+export async function refreshShippedStats(prev: OpsStats): Promise<OpsStats> {
+  const shipped = await scanShippedToday(prev.shipScan as ShipScanState | undefined);
+  const countries = (prev.countries ?? []).map((c) => ({ ...c, shipped: shipped.byCountry?.[c.country] ?? 0 }));
+  for (const [cc, n] of Object.entries(shipped.byCountry ?? {})) {
+    if (!countries.some((c) => c.country === cc)) countries.push({ country: cc, open: 0, shipped: n });
+  }
+  countries.sort((a, b) => (b.open + (b.shipped ?? 0)) - (a.open + (a.shipped ?? 0)));
+  return {
+    ...prev,
+    syncedAt: new Date().toISOString(),
+    shippedOrders: shipped.orders,
+    shippedUnits: shipped.units,
+    shippedByService: Object.entries(shipped.byService).map(([lane, v]) => ({ lane, count: v.count, units: v.units })).sort((a, b) => b.count - a.count),
+    shippedByLane: Object.entries(shipped.byLane).map(([lane, v]) => ({ lane, count: v.count, units: v.units })).sort((a, b) => b.count - a.count),
+    shippedByHour: shipped.byHour ?? [],
+    shippedByHourCarrier: shipped.byHourCarrier,
+    countries: countries.slice(0, 8),
+    shipScan: shipped,
   };
 }
