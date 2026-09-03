@@ -119,6 +119,9 @@ function shiftIso(iso: string, days: number): string {
 // closed/cancelled: Closed view, no lateness, no missing-date nagging.
 const isClosedStatus = (s: string) => /deliver|close|cancel/i.test(s);
 const isDoneStatus = isClosedStatus;
+// A past ex-factory date only means "late" while the goods could still be at
+// the factory — once the status implies dispatch it's just history ("4d ago").
+const hasDispatched = (s: string) => ["ready to ship", "in transit"].includes(s.trim().toLowerCase()) || isDoneStatus(s);
 
 type Tone = "late" | "soon" | "missing" | "";
 function rel(iso: string | null, closed: boolean): { text: string; tone: Tone } {
@@ -966,7 +969,7 @@ function PoRow({ po, dates, expected, checked, open, onOpen, onToggle }: {
         </div>
       </td>
       <td className="px-3 py-2.5 border-b border-slate-100"><DateCell iso={dates?.orderSent ?? null} closed={true} /></td>
-      <td className="px-3 py-2.5 border-b border-slate-100"><DateCell iso={dates?.exFactory ?? null} closed={closed} /></td>
+      <td className="px-3 py-2.5 border-b border-slate-100"><DateCell iso={dates?.exFactory ?? null} closed={hasDispatched(po.status)} /></td>
       <td className="px-3 py-2.5 border-b border-slate-100"><DateCell iso={expected} closed={closed} /></td>
       <td className="px-3 py-2.5 border-b border-slate-100 text-right font-mono text-xs text-slate-800 whitespace-nowrap">{po.totalPrice ? gbp(money(po.totalPrice)) : "—"}</td>
     </tr>
