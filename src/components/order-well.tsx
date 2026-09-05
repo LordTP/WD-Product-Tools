@@ -47,6 +47,8 @@ interface CutoffView {
   needPerHour: number | null;
   doingPerHour: number;
   risk: boolean;
+  /** Sat/Sun — no vans run, so "due today" becomes "ready for Monday". */
+  restDay: boolean;
 }
 function cutoffViews(stats: OpsStats | null): CutoffView[] {
   const { minutes, weekday } = londonNow();
@@ -60,7 +62,7 @@ function cutoffViews(stats: OpsStats | null): CutoffView[] {
     const needPerHour = left && left > 0 ? Math.ceil(ordersLeft / (left / 60)) : null;
     // this carrier own-van rate, last completed hour (falls back to the total if the split is missing)
     const doingPerHour = stats?.shippedByHourCarrier?.[carrier.key]?.[Math.max(0, hourNow - 1)] ?? stats?.shippedByHour?.[Math.max(0, hourNow - 1)] ?? 0;
-    return { carrier, left, ordersLeft, needPerHour, doingPerHour, risk: needPerHour !== null && ordersLeft > 0 && doingPerHour < needPerHour };
+    return { carrier, left, ordersLeft, needPerHour, doingPerHour, risk: needPerHour !== null && ordersLeft > 0 && doingPerHour < needPerHour, restDay: !weekday };
   });
 }
 const fmtLeft = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
@@ -121,6 +123,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
   const lanes: LaneRow[] = stats?.lanes ?? [];
   const buckets: AgeBucket[] = stats?.ageBuckets ?? [];
   const cuts = cutoffViews(stats);
+  const restDay = cuts[0]?.restDay ?? false;
   const dueTodayTotal = lanes.reduce((a, l) => a + l.dueToday, 0);
   const readySingles = lanes.reduce((a, l) => a + l.singles, 0);
   const readyMultis = lanes.reduce((a, l) => a + l.multis, 0);
@@ -158,7 +161,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
               <Kpi label="Unfulfilled" value={stats.totalOpen} sub={`${stats.scannedOrders} orders scanned`} />
               <Kpi label="Ready to pick" value={stats.readyTotal} tone="ok" sub={`${readySingles} singles · ${readyMultis} multis`} />
               <Kpi label="Blocked — waiting stock" value={stats.waitingTotal} tone="warn" sub={stats.blockedProducts?.[0] ? `top: ${stats.blockedProducts[0].product} (${stats.blockedProducts[0].orders})` : "—"} />
-              <Kpi label="Shipped today" value={`${stats.shippedOrders}`} sub={`${stats.shippedUnits} units · due today ${dueTodayTotal}`} />
+              <Kpi label="Shipped today" value={`${stats.shippedOrders}`} sub={`${stats.shippedUnits} units · ${restDay ? `${dueTodayTotal} for Monday` : `due today ${dueTodayTotal}`}`} />
               <Kpi label="Oldest ready order" value={stats.oldestReady ? `${stats.oldestReady.ageDays}d` : "—"} tone={stats.oldestReady && stats.oldestReady.ageDays >= 2 ? "bad" : undefined} sub={stats.oldestReady ? `${stats.oldestReady.orderNumber} · ${stats.oldestReady.lane}` : "nothing ready"} />
             </div>
 
@@ -173,13 +176,15 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
                     <span className="text-[10.5px] text-slate-400">cutoff {c.carrier.cutoff} · van {c.carrier.van}</span>
                   </span>
                   <span className={`font-mono text-xl font-semibold ${c.risk ? "text-rose-600" : "text-slate-900"}`}>
-                    {c.left !== null ? fmtLeft(c.left) : "van gone"}
-                    <span className="block font-sans text-[10.5px] font-normal text-slate-400">{c.left !== null ? "until pickup" : "next collection next working day"}</span>
+                    {c.left !== null ? fmtLeft(c.left) : c.restDay ? "no van today" : "van gone"}
+                    <span className="block font-sans text-[10.5px] font-normal text-slate-400">{c.left !== null ? "until pickup" : c.restDay ? "next collection Monday" : "next collection next working day"}</span>
                   </span>
                   <span className="text-right text-xs text-slate-500">
-                    {c.ordersLeft} due-today order{c.ordersLeft === 1 ? "" : "s"} still open
+                    {c.restDay
+                      ? `${c.ordersLeft} order${c.ordersLeft === 1 ? "" : "s"} ready for Monday's van`
+                      : `${c.ordersLeft} due-today order${c.ordersLeft === 1 ? "" : "s"} still open`}
                     <b className={`block font-mono text-sm ${c.risk ? "text-rose-600" : "text-emerald-600"}`}>
-                      {c.needPerHour === null ? `van gone — ${c.doingPerHour} last hr` : c.ordersLeft === 0 ? "all clear ✓" : `need ${c.needPerHour}/h · last hr ${c.doingPerHour}`}
+                      {c.restDay ? (c.ordersLeft === 0 ? "all clear ✓" : "waiting for Monday") : c.needPerHour === null ? `van gone — ${c.doingPerHour} last hr` : c.ordersLeft === 0 ? "all clear ✓" : `need ${c.needPerHour}/h · last hr ${c.doingPerHour}`}
                     </b>
                   </span>
                 </div>
@@ -299,7 +304,7 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
                 <TvCard label="Shipped today" value={String(stats.shippedOrders)} sub={`${stats.shippedUnits} units`} />
                 <TvCard label="Ready to pick" value={String(stats.readyTotal)} sub={`${readySingles} singles · ${readyMultis} multis`} tone="green" />
-                <TvCard label="Due today left" value={String(dueTodayTotal)} sub="ordered before cutoff" tone={dueTodayTotal > 0 ? "amber" : "green"} />
+                <TvCard label={restDay ? "For Monday's van" : "Due today left"} value={String(dueTodayTotal)} sub={restDay ? "ready & waiting" : "ordered before cutoff"} tone={restDay ? undefined : dueTodayTotal > 0 ? "amber" : "green"} />
                 <TvCard label="Oldest ready" value={stats.oldestReady ? `${stats.oldestReady.ageDays}d` : "—"} sub={stats.oldestReady?.orderNumber ?? ""} tone={stats.oldestReady && stats.oldestReady.ageDays >= 2 ? "red" : undefined} />
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
@@ -309,11 +314,13 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
                       ? <span className="inline-flex items-center bg-[#FFCC00] rounded-md px-3 py-1.5 [&_svg]:h-[14px] [&_svg]:w-auto" dangerouslySetInnerHTML={{ __html: DHL_LOGO }} />
                       : <span className="inline-flex items-center [&_svg]:h-[26px] [&_svg]:w-auto" dangerouslySetInnerHTML={{ __html: RM_LOGO }} />}
                     <span className={`font-mono text-4xl font-semibold ${c.left === null ? "text-slate-500" : c.risk ? "text-rose-400" : "text-emerald-400"}`}>
-                      {c.left !== null ? fmtLeft(c.left) : "done"}
+                      {c.left !== null ? fmtLeft(c.left) : c.restDay ? "no van" : "done"}
                     </span>
                     <span className="text-[15px] text-slate-300">
                       <b className="text-white">Van {c.carrier.van} · cutoff {c.carrier.cutoff}</b><br />
-                      {c.left !== null ? (c.ordersLeft === 0 ? "all clear ✓" : `${c.ordersLeft} orders left · need ${c.needPerHour}/h, last hr ${c.doingPerHour}`) : "next collection next working day"}
+                      {c.left !== null
+                        ? (c.ordersLeft === 0 ? "all clear ✓" : `${c.ordersLeft} orders left · need ${c.needPerHour}/h, last hr ${c.doingPerHour}`)
+                        : c.restDay ? `${c.ordersLeft} ready for Monday's van` : "next collection next working day"}
                     </span>
                   </div>
                 ))}
