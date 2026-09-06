@@ -41,19 +41,19 @@ export function sortBins(bins: InventoryBin[]): InventoryBin[] {
     .sort((a, b) => zoneRank(a.name) - zoneRank(b.name) || a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
-/** Does this item match the query under the chosen scope? Case-insensitive substring. */
+/** Does this item match the query under the chosen scope? Tokenised like the
+ *  Label Press search: every word must appear somewhere in the scoped text, so
+ *  "blythe navy" finds "BLYTHE WIDE LEG TROUSER | NAVY". */
 export function matchesQuery(item: InventoryItem, query: string, scope: SearchScope): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  const inSku = item.sku.toLowerCase().includes(q);
-  const inProduct = item.title.toLowerCase().includes(q) || item.size.toLowerCase().includes(q);
-  const inBarcode = item.barcode.toLowerCase().includes(q);
-  const inLocation = item.bins.some((b) => b.name.toLowerCase().includes(q));
-  switch (scope) {
-    case "sku": return inSku;
-    case "product": return inProduct;
-    case "location": return inLocation;
-    case "barcode": return inBarcode;
-    default: return inSku || inProduct || inBarcode || inLocation;
-  }
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const bins = item.bins.map((b) => b.name).join(" ");
+  const hay = (
+    scope === "sku" ? item.sku
+    : scope === "product" ? `${item.title} ${item.size}`
+    : scope === "location" ? bins
+    : scope === "barcode" ? item.barcode
+    : `${item.sku} ${item.title} ${item.size} ${item.barcode} ${bins}`
+  ).toLowerCase();
+  return tokens.every((t) => hay.includes(t));
 }
