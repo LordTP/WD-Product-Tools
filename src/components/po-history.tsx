@@ -1095,12 +1095,12 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
 
   const dateBox = (label: string, value: string, set: (v: string) => void, hint: string, iso: string | null) => {
     const r = rel(iso, closed || label === "Order sent");
-    const sub = r.tone === "late" ? "text-rose-600 font-semibold" : r.tone === "soon" ? "text-amber-600 font-semibold" : r.tone === "missing" ? "text-amber-600" : "text-slate-400";
+    const chip = r.tone === "late" ? "bg-rose-100 text-rose-700" : r.tone === "soon" ? "bg-amber-100 text-amber-700" : r.tone === "missing" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500";
     return (
-      <div className="bg-slate-50 rounded-lg px-3 py-2">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500">{label} <span className="normal-case tracking-normal text-slate-400">· {hint}</span></p>
-        <input type="date" value={value} onChange={(e) => set(e.target.value)} className={`mt-1 w-full bg-transparent font-mono text-[13px] font-semibold outline-none border-b ${value !== (iso ?? "") ? "border-indigo-400 text-indigo-800" : "border-transparent hover:border-slate-300 text-slate-900"}`} />
-        <p className={`text-[10.5px] mt-0.5 ${sub}`}>{r.text || " "}</p>
+      <div className="bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2.5 hover:border-indigo-200 transition-colors">
+        <p className="text-[9.5px] uppercase tracking-[0.08em] text-slate-400">{label} <span className="normal-case tracking-normal text-slate-300">{"\u00b7"} {hint}</span></p>
+        <input type="date" value={value} onChange={(e) => set(e.target.value)} className={`mt-1 w-full bg-transparent font-mono text-[14px] font-bold outline-none border-b ${value !== (iso ?? "") ? "border-indigo-400 text-indigo-800" : "border-transparent hover:border-slate-300 text-slate-900"}`} />
+        <p className="mt-1 min-h-[18px]">{r.text ? <span className={`inline-block px-1.5 py-px rounded-md text-[10.5px] font-semibold ${chip}`}>{r.text}</span> : null}</p>
       </div>
     );
   };
@@ -1114,29 +1114,67 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
       <aside
         className={`fixed top-0 right-0 bottom-0 w-full max-w-[580px] bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${shown ? "translate-x-0" : "translate-x-full"}`}
       >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h2 className="font-mono text-lg font-bold text-slate-900">{po.poNumber}</h2>
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusClass(po.status)}`}><span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{po.status || "—"}</span>
+        {/* ink header */}
+        <div className="px-5 py-4 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white">
+          <div className="flex items-center gap-2.5">
+            <h2 className="font-mono text-xl font-bold tracking-tight">{po.poNumber}</h2>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-white/10 text-indigo-100">
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{po.status || "—"}
+            </span>
+            <div className="ml-auto flex gap-1.5 shrink-0">
+              <button onClick={onPrev} disabled={!onPrev} title="Previous PO (←)" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-30 transition-colors grid place-items-center">
+                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg>
+              </button>
+              <button onClick={onNext} disabled={!onNext} title="Next PO (→)" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-30 transition-colors grid place-items-center">
+                <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg>
+              </button>
+              <button onClick={onClose} title="Close (Esc)" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white transition-colors grid place-items-center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{po.legacyId ? `row ${po.legacyId} · ` : ""}{v.full || v.short}{v.full ? ` (${v.short})` : ""}</p>
-            <p className="text-[12.5px] text-slate-700 mt-1">{po.products.map((x) => { const q = productParts(x); return `${q.name}${q.colour ? ` — ${q.colour}` : ""}`; }).join(", ") || "—"}</p>
           </div>
-          <div className="flex-1" />
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none shrink-0">×</button>
+          <p className="text-xs text-slate-400 mt-1.5 truncate"><span className="text-slate-200 font-medium">{v.full || v.short}</span>{v.full ? ` (${v.short})` : ""}{po.legacyId ? ` · row ${po.legacyId}` : ""}</p>
+          <p className="text-[13px] text-slate-200 mt-0.5 truncate" title={po.products.join("\n")}>{po.products.map((x) => { const q = productParts(x); return `${q.name}${q.colour ? ` — ${q.colour}` : ""}`; }).join(", ") || "—"}</p>
         </div>
 
-        <div className="flex-1 overflow-auto thin-scroll px-5 py-4 flex flex-col gap-5">
-          {/* progress */}
-          <section>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-slate-700 tabular-nums">{po.unitsReceived.toLocaleString()} / {po.unitsOrdered.toLocaleString()} units received{over && <span className="text-rose-600"> · {po.unitsReceived - po.unitsOrdered} over</span>}</span>
-              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full ${over ? "bg-rose-500" : pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-indigo-500" : "bg-slate-300"}`} style={{ width: `${pct}%` }} /></div>
-              <span className="text-xs text-slate-500 tabular-nums w-9 text-right">{pct}%</span>
-              <span className="font-mono text-xs text-slate-800">{po.totalPrice ? gbp(money(po.totalPrice)) : "—"}</span>
+        {/* stat band */}
+        {(() => {
+          const toCome = Math.max(0, po.unitsOrdered - po.unitsReceived);
+          const perUnit = po.unitsOrdered > 0 && po.totalPrice ? money(po.totalPrice) / po.unitsOrdered : null;
+          const expRel = rel(expected || null, closed);
+          const chip = (tone: string, text: string) => (
+            <span className={`inline-block px-1.5 py-px rounded-md text-[10.5px] font-semibold ${
+              tone === "late" ? "bg-rose-100 text-rose-700" : tone === "soon" ? "bg-amber-100 text-amber-700" : tone === "missing" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"
+            }`}>{text}</span>
+          );
+          return (
+            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-px bg-slate-200 border-b border-slate-200 shrink-0">
+              <div className="bg-slate-50 px-4 py-3">
+                <p className="text-[9.5px] uppercase tracking-[0.08em] text-slate-400">Received</p>
+                <p className="font-mono text-[16px] font-bold text-slate-900 mt-0.5 tabular-nums">{po.unitsReceived.toLocaleString()} <span className="text-[11px] font-medium text-slate-500">/ {po.unitsOrdered.toLocaleString()} units</span></p>
+                <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1.5"><div className={`h-full rounded-full ${over ? "bg-rose-500" : pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-indigo-500" : "bg-slate-300"}`} style={{ width: `${pct}%` }} /></div>
+                <p className={`text-[10.5px] mt-1 ${over ? "text-rose-600 font-semibold" : "text-slate-400"}`}>{over ? `${po.unitsReceived - po.unitsOrdered} over — check for a double book-in` : `${pct}%`}</p>
+              </div>
+              <div className="bg-slate-50 px-4 py-3">
+                <p className="text-[9.5px] uppercase tracking-[0.08em] text-slate-400">Value</p>
+                <p className="font-mono text-[16px] font-bold text-slate-900 mt-0.5">{po.totalPrice ? gbp(money(po.totalPrice)) : "—"}</p>
+                {perUnit !== null && <p className="text-[10.5px] text-slate-400 mt-1">{gbp(perUnit)} / unit</p>}
+              </div>
+              <div className="bg-slate-50 px-4 py-3">
+                <p className="text-[9.5px] uppercase tracking-[0.08em] text-slate-400">Expected</p>
+                <p className="font-mono text-[16px] font-bold text-slate-900 mt-0.5">{expected ? ukDate(expected) : "—"}</p>
+                <p className="mt-1">{expRel.text ? chip(expRel.tone, expRel.text) : chip("", "—")}</p>
+              </div>
+              <div className="bg-slate-50 px-4 py-3">
+                <p className="text-[9.5px] uppercase tracking-[0.08em] text-slate-400">To come</p>
+                <p className={`font-mono text-[16px] font-bold mt-0.5 tabular-nums ${toCome === 0 ? "text-emerald-600" : "text-slate-900"}`}>{toCome.toLocaleString()}</p>
+                <p className="text-[10.5px] text-slate-400 mt-1">{loaded ? `across ${loaded.lines.length} size${loaded.lines.length === 1 ? "" : "s"}` : toCome === 0 ? "all landed" : " "}</p>
+              </div>
             </div>
-          </section>
+          );
+        })()}
+
+        <div className="flex-1 overflow-auto thin-scroll px-5 py-4 flex flex-col gap-5">
 
           {/* dates */}
           <section>
@@ -1161,18 +1199,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
             <div className="flex items-center mb-2">
               <h3 className="text-[10.5px] uppercase tracking-wider text-slate-500 font-medium">By size</h3>
               <div className="flex-1" />
-              {editMode ? (
-                confirm ? (<>
-                  <span className="text-[11px] text-slate-500 mr-1">Write to ShipHero?</span>
-                  <button onClick={() => setConfirm(false)} className="text-[11px] px-2 py-1 rounded-md border border-slate-200 text-slate-600 mr-1">Back</button>
-                  <button onClick={save} disabled={saving} className="text-[11px] px-2.5 py-1 rounded-md bg-indigo-600 text-white font-medium disabled:opacity-50">{saving ? "Saving…" : "Confirm & save"}</button>
-                </>) : (<>
-                  <button onClick={cancelEdit} className="text-[11px] px-2 py-1 rounded-md border border-slate-200 text-slate-600 mr-1">Cancel</button>
-                  <button onClick={() => setConfirm(true)} disabled={!dirty} className="text-[11px] px-2.5 py-1 rounded-md bg-indigo-600 text-white font-medium disabled:opacity-40">Save to ShipHero</button>
-                </>)
-              ) : (
-                <button onClick={() => setEditMode(true)} disabled={!shipheroConnected || !loaded} className="text-[11px] px-2 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">Edit qty / price / status</button>
-              )}
+              {editMode && <span className="text-[11px] text-indigo-600 font-medium">editing — nothing writes until you confirm below</span>}
             </div>
             {editMode && (
               <label className="flex items-center gap-2 text-xs text-slate-600 mb-2">Status
@@ -1188,27 +1215,42 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
             ) : "error" in detail ? (
               <div className="flex items-center gap-3"><p className="text-xs text-rose-600">{detail.error}</p><button onClick={onRefresh} className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600">Retry</button></div>
             ) : (
-              <table className="w-full text-xs">
-                <thead><tr className="text-left text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
-                  <th className="font-medium py-1 pr-2">Size</th><th className="font-medium py-1 pr-2">SKU</th><th className="font-medium py-1 px-2 text-right">Ordered</th><th className="font-medium py-1 px-2 text-right">Price</th><th className="font-medium py-1 px-2 text-right">Received</th><th className="font-medium py-1 pl-2 w-full"></th>
-                </tr></thead>
-                <tbody>
-                  {orderedLines.map((l, i) => {
-                    const lp = l.quantity ? Math.min(100, Math.round((l.quantityReceived / l.quantity) * 100)) : 0;
-                    const lover = l.quantityReceived > l.quantity;
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-left text-[9.5px] uppercase tracking-[0.07em] text-slate-400 bg-slate-50 border-b border-slate-200">
+                    <th className="font-medium py-2 pl-3.5 pr-2">Size</th><th className="font-medium py-2 pr-2">SKU</th><th className="font-medium py-2 px-2 text-right">Ordered</th><th className="font-medium py-2 px-2 text-right">Price</th><th className="font-medium py-2 px-2 text-right">Received</th><th className="font-medium py-2 pl-2 pr-3.5 w-full"></th>
+                  </tr></thead>
+                  <tbody>
+                    {orderedLines.map((l, i) => {
+                      const lp = l.quantity ? Math.min(100, Math.round((l.quantityReceived / l.quantity) * 100)) : 0;
+                      const lover = l.quantityReceived > l.quantity;
+                      const lfull = !lover && l.quantity > 0 && l.quantityReceived >= l.quantity;
+                      return (
+                        <tr key={l.sku + i} className="border-b border-slate-100 last:border-0">
+                          <td className="py-2.5 pl-3.5 pr-2 text-[15px] font-bold text-slate-900 whitespace-nowrap">{deriveSizeFromSku(l.sku, sizeMap) || "—"}</td>
+                          <td className="py-2.5 pr-2 font-mono text-[10.5px] text-slate-400 whitespace-nowrap">{l.sku}</td>
+                          <td className="py-2.5 px-2 text-right font-mono tabular-nums text-slate-700">{editMode ? <input value={getQty(l)} onChange={(e) => setLine(l.sku, "quantity", e.target.value)} className={`w-14 px-1 py-0.5 text-right font-mono text-xs rounded border bg-white ${getQty(l) !== String(l.quantity) ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200"}`} /> : l.quantity}</td>
+                          <td className="py-2.5 px-2 text-right font-mono tabular-nums text-slate-500">{editMode ? <input value={getPrice(l)} onChange={(e) => setLine(l.sku, "price", e.target.value)} className={`w-16 px-1 py-0.5 text-right font-mono text-xs rounded border bg-white ${getPrice(l) !== l.price ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200"}`} /> : fmtPrice(l.price)}</td>
+                          <td className={`py-2.5 px-2 text-right font-mono tabular-nums font-bold ${lover ? "text-rose-600" : lfull ? "text-emerald-600" : "text-slate-900"}`}>{l.quantityReceived}{lover && ` (+${l.quantityReceived - l.quantity})`}</td>
+                          <td className="py-2.5 pl-2 pr-3.5"><div className="h-1.5 bg-slate-100 rounded-full overflow-hidden min-w-[70px]"><div className={`h-full rounded-full ${lover ? "bg-rose-500" : lp >= 100 ? "bg-emerald-500" : lp > 0 ? "bg-indigo-500" : ""}`} style={{ width: `${lp}%` }} /></div></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {orderedLines.length > 1 && (() => {
+                    const tOrd = orderedLines.reduce((a, l) => a + l.quantity, 0);
+                    const tRec = orderedLines.reduce((a, l) => a + l.quantityReceived, 0);
+                    const tover = tRec > tOrd;
                     return (
-                      <tr key={l.sku + i} className="border-b border-slate-100 last:border-0">
-                        <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">{deriveSizeFromSku(l.sku, sizeMap) || "—"}</td>
-                        <td className="py-1.5 pr-2 font-mono text-[10.5px] text-slate-400 whitespace-nowrap">{l.sku}</td>
-                        <td className="py-1.5 px-2 text-right font-mono tabular-nums">{editMode ? <input value={getQty(l)} onChange={(e) => setLine(l.sku, "quantity", e.target.value)} className={`w-14 px-1 py-0.5 text-right font-mono text-xs rounded border ${getQty(l) !== String(l.quantity) ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200"}`} /> : l.quantity}</td>
-                        <td className="py-1.5 px-2 text-right font-mono tabular-nums">{editMode ? <input value={getPrice(l)} onChange={(e) => setLine(l.sku, "price", e.target.value)} className={`w-16 px-1 py-0.5 text-right font-mono text-xs rounded border ${getPrice(l) !== l.price ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200"}`} /> : fmtPrice(l.price)}</td>
-                        <td className={`py-1.5 px-2 text-right font-mono tabular-nums ${lover ? "text-rose-600 font-semibold" : "text-slate-800"}`}>{l.quantityReceived}{lover && ` (+${l.quantityReceived - l.quantity})`}</td>
-                        <td className="py-1.5 pl-2"><div className="h-1.5 bg-slate-100 rounded-full overflow-hidden min-w-[70px]"><div className={`h-full ${lover ? "bg-rose-500" : lp >= 100 ? "bg-emerald-500" : lp > 0 ? "bg-indigo-500" : ""}`} style={{ width: `${lp}%` }} /></div></td>
-                      </tr>
+                      <tfoot><tr className="bg-slate-50 border-t border-slate-200">
+                        <td className="py-2 pl-3.5 pr-2 text-[11px] font-semibold text-slate-500">Total</td><td></td>
+                        <td className="py-2 px-2 text-right font-mono tabular-nums font-bold text-slate-900">{tOrd}</td><td></td>
+                        <td className={`py-2 px-2 text-right font-mono tabular-nums font-bold ${tover ? "text-rose-600" : "text-slate-900"}`}>{tRec}{tover && ` (+${tRec - tOrd})`}</td><td></td>
+                      </tr></tfoot>
                     );
-                  })}
-                </tbody>
-              </table>
+                  })()}
+                </table>
+              </div>
             )}
           </section>
 
@@ -1231,7 +1273,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
                   const dot = t.tone === "in" ? "bg-emerald-500" : t.tone === "fix" ? "bg-rose-500" : t.tone === "date" ? "bg-indigo-500" : "bg-slate-300";
                   return (
                     <Fragment key={i}>
-                      {newDay && <p className="text-[10px] uppercase tracking-wider text-slate-400 mt-2.5 mb-0.5">{ukDate(day)}</p>}
+                      {newDay && <p className="flex items-center gap-2.5 text-[10.5px] font-semibold text-slate-500 mt-3 mb-1 after:content-[''] after:flex-1 after:h-px after:bg-slate-200">{ukDate(day)}</p>}
                       <div className="grid grid-cols-[40px_10px_1fr] gap-2 py-1 items-start">
                         <span className="font-mono text-[10.5px] text-slate-400 pt-0.5">{hm(t.at)}</span>
                         <span className={`w-2 h-2 rounded-full mt-1.5 ${dot}`} />
@@ -1245,13 +1287,30 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
           </section>
         </div>
 
-        <div className="px-5 py-3 border-t border-slate-200 flex items-center gap-2">
-          {po.legacyId && <a href={`https://app.shiphero.com/dashboard/purchase-orders/details/${po.legacyId}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50">Open in ShipHero ↗</a>}
-          <button onClick={() => setUnreceiveOpen(true)} disabled={!shipheroConnected} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40" title="Take units off this PO's received counters (and out of stock)">Un-receive…</button>
-          <button onClick={onRefresh} className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" title="Re-pull this PO from ShipHero">Refresh</button>
-          <div className="flex-1" />
-          <button onClick={onPrev} disabled={!onPrev} className="text-xs px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Previous PO (←)">‹ Prev</button>
-          <button onClick={onNext} disabled={!onNext} className="text-xs px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Next PO (→)">Next ›</button>
+        <div className="px-5 py-3 border-t border-slate-200 bg-white/95 flex items-center gap-2">
+          {editMode ? (
+            confirm ? (<>
+              <span className="text-xs text-slate-700 font-medium">Write these changes to ShipHero?</span>
+              <button onClick={() => setConfirm(false)} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Back</button>
+              <button onClick={save} disabled={saving} className="text-xs px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-500 disabled:opacity-50">{saving ? "Saving…" : "Confirm & save"}</button>
+              <div className="flex-1" />
+              <button onClick={cancelEdit} disabled={saving} className="text-xs px-2.5 py-2 rounded-lg text-slate-400 hover:text-slate-700">Cancel</button>
+            </>) : (<>
+              <button onClick={() => setConfirm(true)} disabled={!dirty} className="text-xs px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-500 disabled:opacity-40">Save to ShipHero</button>
+              <button onClick={cancelEdit} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <div className="flex-1" />
+              <span className="text-[10.5px] text-slate-400">{dirty ? "unsaved changes" : "change a qty, price or the status"}</span>
+            </>)
+          ) : (<>
+            <button onClick={() => setEditMode(true)} disabled={!shipheroConnected || !loaded} className="text-xs px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-500 disabled:opacity-40">Edit qty / price / status</button>
+            <button onClick={() => setUnreceiveOpen(true)} disabled={!shipheroConnected} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40 disabled:opacity-40" title="Take units off this PO's received counters (and out of stock)">Un-receive…</button>
+            {po.legacyId && <a href={`https://app.shiphero.com/dashboard/purchase-orders/details/${po.legacyId}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40">ShipHero ↗</a>}
+            <button onClick={onRefresh} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="Re-pull this PO from ShipHero">Refresh</button>
+            <div className="flex-1" />
+            <span className="text-[10.5px] text-slate-300 whitespace-nowrap">
+              <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">←</kbd> <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">→</kbd> switch · <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">esc</kbd> close
+            </span>
+          </>)}
         </div>
       </aside>
       {unreceiveOpen && (
