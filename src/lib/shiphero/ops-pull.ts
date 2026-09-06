@@ -240,12 +240,22 @@ export async function computeOpsStats(prevShip?: ShipScanState): Promise<Omit<Op
 
   // v2 lane families
   const today = todayUkYmd();
-  const dayStart = ukDayStartUtcNaive(today);
+  // "Due" is owed on the NEXT collection (vans run Mon–Fri): an order placed
+  // after Friday's cutoff — or any time over the weekend — belongs to Monday's
+  // van, so the boundary is the next collection day's cutoff, not today's.
+  const nowNaive = new Date().toISOString().slice(0, 19);
   const cutoffNaive = (hm: string): string => {
-    const d = new Date(`${dayStart}Z`);
     const [h, m] = hm.split(":").map(Number);
-    d.setUTCMinutes(d.getUTCMinutes() + h * 60 + m);
-    return d.toISOString().slice(0, 19);
+    for (let i = 0; i < 7; i++) {
+      const ymd = new Date(Date.parse(`${today}T12:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+      const wd = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+      if (wd === 0 || wd === 6) continue; // no collections Sat/Sun
+      const d = new Date(`${ukDayStartUtcNaive(ymd)}Z`);
+      d.setUTCMinutes(d.getUTCMinutes() + h * 60 + m);
+      const iso = d.toISOString().slice(0, 19);
+      if (iso > nowNaive) return iso; // first future collection cutoff
+    }
+    return nowNaive; // unreachable, but never undefined
   };
   const cutoffs: Record<string, string> = Object.fromEntries(CARRIERS.map((c) => [c.key, cutoffNaive(c.cutoff)]));
   const laneMap = new Map<string, LaneRow>();

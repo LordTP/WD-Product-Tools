@@ -182,7 +182,9 @@ export function OrderWell({ shipheroConnected, initialStats, initialTv = false }
                   <span className="text-right text-xs text-slate-500">
                     {c.restDay
                       ? `${c.ordersLeft} order${c.ordersLeft === 1 ? "" : "s"} ready for Monday's van`
-                      : `${c.ordersLeft} due-today order${c.ordersLeft === 1 ? "" : "s"} still open`}
+                      : c.left === null
+                        ? `${c.ordersLeft} order${c.ordersLeft === 1 ? "" : "s"} for tomorrow's van`
+                        : `${c.ordersLeft} due-today order${c.ordersLeft === 1 ? "" : "s"} still open`}
                     <b className={`block font-mono text-sm ${c.risk ? "text-rose-600" : "text-emerald-600"}`}>
                       {c.restDay ? (c.ordersLeft === 0 ? "all clear ✓" : "waiting for Monday") : c.needPerHour === null ? `van gone — ${c.doingPerHour} last hr` : c.ordersLeft === 0 ? "all clear ✓" : `need ${c.needPerHour}/h · last hr ${c.doingPerHour}`}
                     </b>
