@@ -6,8 +6,12 @@
 //  · applyBookIn WRITES: per line `purchase_order_update` quantity_received
 //    +remaining (DELTA semantics — same call as Un-receive, positive) and
 //    `inventory_add` into the chosen RET bin, each verified by re-read; then
-//    `purchase_order_set_fulfillment_status` → Closed. Deltas make a re-run
-//    after a partial failure safe — only what's still missing gets added.
+//    the dedicated `purchase_order_close` mutation (introspected 6 Sep — the
+//    UI-equivalent close, no line-status cascade). Deltas make a re-run after
+//    a partial failure safe — only what's still missing gets added.
+// The counter+stock split IS ShipHero's official API receiving workflow: the
+// public schema has NO receive-PO-into-location mutation (confirmed by live
+// introspection of all 128 mutations + developer.shiphero.com/purchase-orders).
 // Only ever invoked from the user's explicit Confirm in the Book-in modal.
 
 import { eq } from "drizzle-orm";
@@ -17,7 +21,6 @@ import { shipheroGraphql } from "./client";
 import { getWarehouseId } from "./warehouse";
 import { poDetail } from "./po-unreceive";
 import { resolveLocationByName, getSkuAtLocation } from "./bins-pull";
-import { editPurchaseOrder } from "./po-edit";
 import { RET_BINS, type BookInLineResult, type BookInResult, type LivePoCheck, type PoDraftDto } from "@/lib/po-scanner-types";
 
 const q1 = (s: string) => String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -125,7 +128,10 @@ export async function applyBookIn(draft: PoDraftDto, bin: string): Promise<BookI
   let closeError: string | undefined;
   if (allOk) {
     try {
-      await editPurchaseOrder(draft.shipheroId, { status: "Closed" });
+      await shipheroGraphql(
+        `mutation C($data: ClosePurchaseOrderInput!) { purchase_order_close(data: $data) { request_id } }`,
+        { data: { po_id: draft.shipheroId } },
+      );
       const check = await poDetail(draft.shipheroId);
       closed = check.status.trim().toLowerCase() === "closed";
       if (!closed) closeError = `Status is “${check.status}” after the close call.`;
