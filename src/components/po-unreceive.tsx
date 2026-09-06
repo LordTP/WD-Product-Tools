@@ -200,7 +200,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
       </div>
 
       <div className="flex-1 overflow-auto bg-slate-50">
-        <div className="p-4 lg:p-8 max-w-5xl mx-auto flex flex-col gap-5">
+        <div className="p-4 lg:p-6 flex flex-col gap-5">
           {!shipheroConnected && <Banner tone="amber">ShipHero isn&apos;t connected.</Banner>}
           {error && <Banner tone="rose">{error}</Banner>}
 
