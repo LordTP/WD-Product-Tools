@@ -44,6 +44,7 @@ function family(t: EventType | string): string {
     case "consolidation": return "Consolidating stock";
     case "to-qc": case "to-faulty": case "qc-release": return "QC / faulty";
     case "adjust": return "Stock corrections";
+    case "cycle-count": return "Cycle counting";
     default: return "Moving stock";
   }
 }

@@ -18,7 +18,8 @@ export type EventType =
   | "qc-release"
   | "pick-reorg"
   | "move"
-  | "adjust";
+  | "adjust"
+  | "cycle-count";
 
 export interface WarehouseEvent {
   at: string;       // ISO
@@ -122,6 +123,7 @@ export const TYPE_META: Record<EventType, { label: string; color: string }> = {
   "pick-reorg": { label: "Pick-face reorg", color: "#65a30d" },
   move: { label: "Other move", color: "#64748b" },
   adjust: { label: "Manual adjustment", color: "#e11d48" },
+  "cycle-count": { label: "Cycle count", color: "#c026d3" },
 };
 
 export function initialsOf(name: string): string {

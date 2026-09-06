@@ -160,6 +160,11 @@ export async function pullWarehouseDay(date: string): Promise<WarehouseDay> {
     } else if (/\bshipped\b|reshipped/.test(rl) && !/from bin|to bin/.test(rl)) {
       events.push({ at: r.at, user: uname(r.user), sku: r.sku, qty: r.chg, fromBin: r.loc || null, toBin: "SHIPPED", reason: r.reason, type: "shipped" });
       // shipped-by-person comes from the shipments query, not these rows
+    } else if (/cycle count/.test(rl)) {
+      // Count discrepancies land as single-sided rows — their own type, not
+      // "manual adjustment" (nobody moved stock; the count corrected the book).
+      events.push({ at: r.at, user: uname(r.user), sku: r.sku, qty: r.chg, fromBin: r.loc || null, toBin: null, reason: r.reason, type: "cycle-count" });
+      const p = pget(r.user); p.total++;
     } else {
       transfers.push(r);
     }

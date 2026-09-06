@@ -16,7 +16,7 @@ import {
 } from "@/lib/warehouse-types";
 import { personReport } from "@/lib/warehouse-person";
 
-const TYPES: EventType[] = ["received", "putaway", "replenish", "consolidation", "return-received", "return-slotted", "picked", "shipped", "to-qc", "to-faulty", "qc-release", "pick-reorg", "move", "adjust"];
+const TYPES: EventType[] = ["received", "putaway", "replenish", "consolidation", "return-received", "return-slotted", "picked", "shipped", "to-qc", "to-faulty", "qc-release", "pick-reorg", "move", "adjust", "cycle-count"];
 const AV_COLORS = ["#6366f1", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6"];
 
 function timeAgo(iso: string | null | undefined): string {
@@ -405,9 +405,11 @@ export function WarehouseActivity({ shipheroConnected }: { shipheroConnected: bo
                           <td className="py-1.5 pl-2 text-slate-500 whitespace-nowrap">
                             {e.toBin === "SHIPPED"
                               ? "→ shipped"
-                              : e.type === "adjust"
-                                ? `${e.qty >= 0 ? "added to" : "removed from"} ${e.toBin || e.fromBin || "?"}`
-                                : `${e.fromBin ? area(e.fromBin) : "?"} → ${e.toBin ? area(e.toBin) : "?"}`}
+                              : e.type === "cycle-count"
+                                ? `count ${e.qty >= 0 ? "found extra" : "came up short"} in ${e.fromBin || "?"}`
+                                : e.type === "adjust"
+                                  ? `${e.qty >= 0 ? "added to" : "removed from"} ${e.toBin || e.fromBin || "?"}`
+                                  : `${e.fromBin ? area(e.fromBin) : "?"} → ${e.toBin ? area(e.toBin) : "?"}`}
                           </td>
                           <td className="py-1.5 pl-3"><span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: meta.color + "1a", color: meta.color }}>{meta.label}</span></td>
                         </tr>
