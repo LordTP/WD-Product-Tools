@@ -123,6 +123,28 @@ export function initDb() {
   } catch (err) {
     console.error("[db] inventory_locations_cache init failed:", err);
   }
+  // PO Scanner drafts (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS po_drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        po_number TEXT NOT NULL UNIQUE,
+        vendor_id TEXT,
+        vendor_name TEXT,
+        lines TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'draft',
+        shiphero_id TEXT,
+        booked_bin TEXT,
+        booked_at TEXT,
+        book_in_result TEXT,
+        pushed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    );
+  } catch (err) {
+    console.error("[db] po_drafts init failed:", err);
+  }
   // Per-PO sheet dates ShipHero can't hold (idempotent; not in a migration).
   try {
     sqlite.exec(

@@ -251,6 +251,28 @@ export const inventoryLocationsCache = sqliteTable("inventory_locations_cache", 
 
 export type InventoryLocationRow = typeof inventoryLocationsCache.$inferSelect;
 
+// PO Scanner drafts (Apps → PO Scanner): scan-built POs for returns/odd stock.
+// draft → pushed (purchase_order_create via the existing push machinery) →
+// booked (received into a RET bin + closed). Lines are JSON; the ShipHero id
+// from the push powers the live match-check in the Book-in modal.
+export const poDrafts = sqliteTable("po_drafts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  poNumber: text("po_number").notNull().unique(),
+  vendorId: text("vendor_id"), // ShipHero vendor id (string), nullable
+  vendorName: text("vendor_name"),
+  lines: text("lines").notNull().default("[]"), // JSON DraftLine[]
+  status: text("status").notNull().default("draft"), // draft | pushed | booked
+  shipheroId: text("shiphero_id"),
+  bookedBin: text("booked_bin"),
+  bookedAt: text("booked_at"),
+  bookInResult: text("book_in_result"), // JSON BookInResult — honest per-line outcome
+  pushedAt: text("pushed_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type PoDraftRow = typeof poDrafts.$inferSelect;
+
 // Per-PO ShipHero history (rebuilt from inventory_changes), cached 15 min.
 export const poHistoryCache = sqliteTable("po_history_cache", {
   poId: text("po_id").primaryKey(),

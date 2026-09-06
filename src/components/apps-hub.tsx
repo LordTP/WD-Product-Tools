@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { InventoryExplorer } from "./inventory-explorer";
 import { ScanApp } from "./scan-app";
+import { PoScannerApp } from "./po-scanner-app";
 
 type AppKey = "scan" | "inventory" | "po-scanner";
 
@@ -45,7 +46,7 @@ const APPS: AppCard[] = [
     name: "PO Scanner",
     desc: "Scan returns and odd stock into a PO, push it to ShipHero, then book the lot into a RET bin and close it — all in one flow.",
     meta: "Build · push · book in",
-    ready: false,
+    ready: true,
     icon: PoScanIcon,
     tint: "bg-amber-50 text-amber-600",
   },
@@ -175,6 +176,8 @@ function AppFrame({ appKey, onBack }: { appKey: AppKey; onBack: () => void }) {
         <InventoryExplorer />
       ) : appKey === "scan" ? (
         <ScanApp />
+      ) : appKey === "po-scanner" ? (
+        <PoScannerApp />
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
           <div className="text-center max-w-sm">
