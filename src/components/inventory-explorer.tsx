@@ -220,7 +220,26 @@ function SkuCard({ item, onOpen }: { item: InventoryItem; onOpen: () => void }) 
   );
 }
 
+function DetailTabs<T extends string>({ tabs, tab, setTab }: { tabs: Array<[T, string]>; tab: T; setTab: (t: T) => void }) {
+  return (
+    <div className="flex rounded-lg border border-slate-200 overflow-hidden self-start">
+      {tabs.map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => setTab(key)}
+          className={`px-3.5 py-1.5 text-xs font-medium transition-colors ${
+            tab === key ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SkuDetail({ item, onOpenBin }: { item: InventoryItem | undefined; onOpenBin: (bin: string) => void }) {
+  const [tab, setTab] = useState<"bins" | "history">("bins");
   if (!item) return <p className="text-sm text-slate-400">SKU not in the cache.</p>;
   return (
     <div className="flex flex-col gap-4">
@@ -235,9 +254,11 @@ function SkuDetail({ item, onOpenBin }: { item: InventoryItem | undefined; onOpe
         <TotalChip label="available" value={item.available} />
         <TotalChip label="non-sellable" value={item.nonSellable} tone="amber" />
       </div>
-      {item.bins.length ? (
+      <DetailTabs tabs={[["bins", "Bins"], ["history", "History"]]} tab={tab} setTab={setTab} />
+      {tab === "history" ? (
+        <InventoryHistory query={`sku=${encodeURIComponent(item.sku)}`} mode="sku" />
+      ) : item.bins.length ? (
         <div className="flex flex-col gap-1">
-          <p className="text-[11px] uppercase tracking-wider text-slate-400">Bins</p>
           {item.bins.map((b) => (
             <button
               key={b.name}
@@ -253,13 +274,65 @@ function SkuDetail({ item, onOpenBin }: { item: InventoryItem | undefined; onOpe
           ))}
         </div>
       ) : (
-        <p className="text-sm text-slate-400">{item.onHand > 0 ? "No bin recorded for this stock." : "Out of stock — no bin."}</p>
+        <p className="text-sm text-slate-400">
+          {item.onHand > 0 ? "No bin recorded for this stock." : "Out of stock — no bin. History shows where it last lived."}
+        </p>
       )}
     </div>
   );
 }
 
+interface HistoryEvent { at: string; user: string; sku: string; qty: number; bin: string; reason: string }
+
+const fmtAt = (at: string) =>
+  at
+    ? new Date(at.endsWith("Z") ? at : at + "Z").toLocaleString("en-GB", {
+        timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+      })
+    : "";
+
+// Live ShipHero change log for one SKU or bin — fetched when the tab opens.
+function InventoryHistory({ query, mode }: { query: string; mode: "sku" | "bin" }) {
+  const [events, setEvents] = useState<HistoryEvent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`/api/inventory/history?${query}`);
+        const json = (await res.json()) as { events?: HistoryEvent[]; error?: string };
+        if (!res.ok || json.error) throw new Error(json.error ?? "History failed.");
+        setEvents(json.events ?? []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "History failed.");
+      }
+    })();
+  }, [query]);
+
+  if (error) return <p className="text-sm text-rose-600">{error}</p>;
+  if (events === null) return <p className="text-sm text-slate-400">Pulling the change log from ShipHero…</p>;
+  if (!events.length) return <p className="text-sm text-slate-400">No changes recorded {mode === "sku" ? "in the last 90 days" : "in the last 30 days"}.</p>;
+  return (
+    <div className="flex flex-col divide-y divide-slate-100 rounded-lg border border-slate-100">
+      {events.map((e, i) => (
+        <div key={i} className="px-3 py-2 flex items-start gap-3 text-[12px]">
+          <span className={`shrink-0 w-11 text-right font-mono font-bold ${e.qty > 0 ? "text-emerald-600" : e.qty < 0 ? "text-rose-600" : "text-slate-400"}`}>
+            {e.qty > 0 ? `+${e.qty}` : e.qty}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-slate-700">
+              <span className="font-mono">{mode === "sku" ? e.bin : e.sku}</span>
+              {e.reason && <span className="text-slate-500"> · {e.reason}</span>}
+            </span>
+            <span className="block text-[11px] text-slate-400 mt-0.5">{fmtAt(e.at)} · {e.user}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BinDetail({ bin, items, onOpenSku }: { bin: string; items: InventoryItem[]; onOpenSku: (sku: string) => void }) {
+  const [tab, setTab] = useState<"contents" | "history">("contents");
   const contents = useMemo(() => {
     const rows = items
       .map((i) => ({ item: i, qty: i.bins.find((b) => b.name === bin)?.qty ?? 0 }))
@@ -268,8 +341,17 @@ function BinDetail({ bin, items, onOpenSku }: { bin: string; items: InventoryIte
     return rows;
   }, [bin, items]);
   const units = contents.reduce((a, r) => a + r.qty, 0);
+  if (tab === "history") {
+    return (
+      <div className="flex flex-col gap-3">
+        <DetailTabs tabs={[["contents", "Contents"], ["history", "History"]]} tab={tab} setTab={setTab} />
+        <InventoryHistory query={`bin=${encodeURIComponent(bin)}`} mode="bin" />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
+      <DetailTabs tabs={[["contents", "Contents"], ["history", "History"]]} tab={tab} setTab={setTab} />
       <p className="text-[12px] text-slate-500">
         {contents.length} SKU{contents.length === 1 ? "" : "s"} · {units.toLocaleString()} units in this bin
       </p>
