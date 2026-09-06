@@ -140,7 +140,23 @@ export async function GET() {
     let idx = sorted.findIndex(([ym]) => ym >= curYm);
     if (idx === -1) idx = sorted.length - 1;
     const from = Math.max(0, idx - 3);
-    const months: MonthBar[] = sorted.slice(from, from + 8).map(([ym, v]) => ({ ym, value: Math.round(v.value), pos: v.pos, current: ym === curYm }));
+    const windowList = sorted.slice(from, from + 8);
+    // Contiguous calendar months: a month with nothing expected renders as a
+    // zero stub instead of silently vanishing (Oct → Dec with no Nov).
+    const addMonth = (ym: string, n: number) => {
+      const [y, mo] = ym.split("-").map(Number);
+      const t = y * 12 + (mo - 1) + n;
+      return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+    };
+    const months: MonthBar[] = [];
+    if (windowList.length) {
+      const valByYm = new Map(windowList);
+      const last = windowList[windowList.length - 1][0];
+      for (let ym = windowList[0][0]; ym <= last && months.length < 10; ym = addMonth(ym, 1)) {
+        const v = valByYm.get(ym);
+        months.push({ ym, value: Math.round(v?.value ?? 0), pos: v?.pos ?? 0, current: ym === curYm });
+      }
+    }
 
     const data: DashboardData = {
       today: {
