@@ -59,8 +59,15 @@ export function Dashboard({ shipheroConnected, sizeMap }: { shipheroConnected: b
     }
   }, []);
 
+  // Load on mount, then keep the page honest without anyone pressing Sync:
+  // re-read the caches every 5 minutes while open, and immediately when the
+  // tab regains focus (cache-only — zero ShipHero credits either way).
   useEffect(() => {
     void (async () => { await load(); })();
+    const id = setInterval(() => void load(), 5 * 60_000);
+    const onFocus = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onFocus); };
   }, [load]);
 
   async function sync() {
