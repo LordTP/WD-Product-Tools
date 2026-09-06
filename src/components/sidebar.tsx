@@ -36,6 +36,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Warehouse",
     items: [
+      { href: "/apps", label: "Apps", icon: AppsIcon },
       { href: "/order-well", label: "Order Well", icon: OpsIcon },
       { href: "/operations", label: "Operations", icon: ActivityIcon },
       { href: "/returns", label: "Returns", icon: ReturnIcon },
@@ -201,6 +202,14 @@ function ActivityIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+function AppsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   );
 }
