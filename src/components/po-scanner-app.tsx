@@ -71,12 +71,12 @@ export function PoScannerApp() {
 
   async function newDraft() {
     try {
-      const def = vendors.find((v) => v.name === "Wander Doll") ?? vendors[0] ?? null;
+      // No vendor by default — matching the old app; manual POs go up vendorless.
       const { draft } = await jsonOrThrow<{ draft: PoDraftDto }>(
         await fetch("/api/po-scanner/drafts", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ vendorId: def?.id ?? null, vendorName: def?.name ?? "" }),
+          body: JSON.stringify({ vendorId: null, vendorName: "" }),
         }),
       );
       setDrafts((prev) => [draft, ...(prev ?? [])]);
@@ -108,7 +108,7 @@ export function PoScannerApp() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className="p-4 lg:p-6 max-w-3xl mx-auto flex flex-col gap-5">
+      <div className="p-4 lg:p-6 flex flex-col gap-5">
         {error && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
         <div className="flex items-center justify-between">
@@ -135,14 +135,14 @@ export function PoScannerApp() {
               </div>
             )}
             {active.length > 0 && (
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5">
                 {active.map((d) => <DraftCard key={d.id} draft={d} onOpen={() => setOpenId(d.id)} />)}
               </div>
             )}
             {booked.length > 0 && (
               <div>
                 <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-1.5">Recently booked in</p>
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5">
                   {booked.map((d) => <DraftCard key={d.id} draft={d} onOpen={() => setOpenId(d.id)} />)}
                 </div>
               </div>
@@ -214,11 +214,12 @@ function DraftView({
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
   // Debounced autosave — every mutation routes through here.
-  const persist = useCallback((lines: DraftLine[], vendor?: Vendor) => {
+  // vendor: undefined = unchanged, null = cleared to "No vendor".
+  const persist = useCallback((lines: DraftLine[], vendor?: Vendor | null) => {
     const next: PoDraftDto = {
       ...draftRef.current,
       lines,
-      ...(vendor ? { vendorId: vendor.id, vendorName: vendor.name } : {}),
+      ...(vendor !== undefined ? { vendorId: vendor?.id ?? null, vendorName: vendor?.name ?? "" } : {}),
     };
     onChange(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -351,12 +352,12 @@ function DraftView({
           <select
             value={draft.vendorId ?? ""}
             onChange={(e) => {
-              const v = vendors.find((x) => x.id === e.target.value);
-              if (v) persist(draftRef.current.lines, v);
+              const v = vendors.find((x) => x.id === e.target.value) ?? null;
+              persist(draftRef.current.lines, v);
             }}
             className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[12px] text-slate-600"
           >
-            <option value="" disabled>Vendor…</option>
+            <option value="">No vendor</option>
             {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
         )}
@@ -372,7 +373,7 @@ function DraftView({
             </button>
             <button
               onClick={() => setModal("push")}
-              disabled={draft.lines.length === 0 || !draft.vendorId}
+              disabled={draft.lines.length === 0}
               className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 disabled:opacity-40 transition-colors"
             >
               Push to ShipHero
@@ -390,11 +391,12 @@ function DraftView({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="p-4 lg:p-6 max-w-3xl mx-auto flex flex-col gap-4">
+        <div className="p-4 lg:p-6 flex flex-col gap-4">
           {error && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
+          <div className={`grid gap-4 lg:gap-6 items-start ${editable ? "lg:grid-cols-[420px_minmax(0,1fr)]" : "grid-cols-1"}`}>
           {editable && (
-            <>
+            <div className="flex flex-col gap-4 min-w-0 lg:sticky lg:top-0">
               {/* scan zone */}
               <form
                 onSubmit={(e) => {
@@ -472,9 +474,10 @@ function DraftView({
                   <span className="font-mono text-xl font-bold text-emerald-700 shrink-0">×{lastScan.qty}</span>
                 </div>
               )}
-            </>
+            </div>
           )}
 
+          <div className="flex flex-col gap-4 min-w-0">
           {/* totals strip — sticky so the counters are always in view */}
           <div className="sticky top-0 z-10 bg-slate-100 -mx-1 px-1 py-1.5">
             <div className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center gap-4 shadow-sm">
@@ -522,6 +525,8 @@ function DraftView({
 
           {/* booked summary */}
           {draft.status === "booked" && draft.bookInResult && <BookedSummary result={draft.bookInResult} />}
+          </div>
+          </div>
         </div>
       </div>
 
@@ -588,7 +593,7 @@ function PushModal({ draft, vendorName, onClose, onPushed }: {
   return (
     <ConfirmShell title={`Push ${draft.poNumber} to ShipHero`} onClose={busy ? () => {} : onClose}>
       <p className="text-sm text-slate-600">
-        This creates the purchase order in ShipHero — <span className="font-medium text-slate-900">{vendorName}</span>,{" "}
+        This creates the purchase order in ShipHero — <span className="font-medium text-slate-900">{vendorName || "no vendor"}</span>,{" "}
         {draft.lines.length} SKU{draft.lines.length === 1 ? "" : "s"}, {draftUnits(draft)} units, status Pending.
         Booking it into a bin is the next step, after it exists.
       </p>

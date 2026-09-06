@@ -87,6 +87,18 @@ export interface PushRow {
   error?: string;
 }
 
+/** The raw purchase_order_create call. WRITES — callers own the confirm gate
+ *  and any duplicate-number check. Also used by the PO Scanner push (which
+ *  allows vendorless POs, so it can't go through pushPurchaseOrders). */
+export async function createPurchaseOrder(input: ReturnType<typeof buildPurchaseOrderInput>): Promise<{ id: string }> {
+  const { data } = await shipheroGraphql<{
+    purchase_order_create?: { purchase_order?: { id?: string } };
+  }>(CREATE_MUTATION, { data: input });
+  const id = data.purchase_order_create?.purchase_order?.id;
+  if (!id) throw new Error("ShipHero accepted the push but returned no PO id.");
+  return { id };
+}
+
 /** REAL purchase_order_create per PO. User-triggered only. Re-checks duplicates
  *  server-side as a final guard, and skips anything not pushable. */
 export async function pushPurchaseOrders(

@@ -109,7 +109,8 @@ export function ScanApp() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto flex flex-col gap-4">
+      <div className="p-4 lg:p-6 grid gap-4 lg:gap-6 items-start lg:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 min-w-0 lg:sticky lg:top-0">
         {/* scan zone */}
         <form
           onSubmit={(e) => {
@@ -179,7 +180,9 @@ export function ScanApp() {
             <p className="text-xs text-rose-500 mt-0.5">Not a known barcode, SKU or stocked bin. Empty bins aren’t in the cache.</p>
           </div>
         )}
+        </div>
 
+        <div className="flex flex-col gap-4 min-w-0">
         {/* disambiguation */}
         {choices && (
           <div className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -228,7 +231,7 @@ export function ScanApp() {
           </div>
         )}
 
-        {!cameraOn && recent.length === 0 && !choices && (
+        {recent.length === 0 && !choices && (
           <div className="text-center py-10">
             <p className="text-sm text-slate-500">
               Scan a <span className="font-medium text-slate-700">product barcode</span> to see where it lives,
@@ -237,6 +240,7 @@ export function ScanApp() {
             <p className="text-xs text-slate-400 mt-1.5">Handheld scanners type into the box automatically — just pull the trigger.</p>
           </div>
         )}
+        </div>
       </div>
 
       {/* detail modal */}
