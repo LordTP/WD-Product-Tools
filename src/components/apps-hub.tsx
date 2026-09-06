@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { InventoryExplorer } from "./inventory-explorer";
+import { ScanApp } from "./scan-app";
 
 type AppKey = "scan" | "inventory" | "po-scanner";
 
@@ -26,7 +27,7 @@ const APPS: AppCard[] = [
     name: "Scan",
     desc: "Point the camera (or a handheld scanner) at any barcode or bin label to see exactly what it is and where it lives.",
     meta: "Camera + wedge scanner",
-    ready: false,
+    ready: true,
     icon: ScanIcon,
     tint: "bg-indigo-50 text-indigo-600",
   },
@@ -172,6 +173,8 @@ function AppFrame({ appKey, onBack }: { appKey: AppKey; onBack: () => void }) {
 
       {appKey === "inventory" ? (
         <InventoryExplorer />
+      ) : appKey === "scan" ? (
+        <ScanApp />
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
           <div className="text-center max-w-sm">
