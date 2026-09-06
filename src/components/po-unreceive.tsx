@@ -17,9 +17,24 @@ interface Removal { unreceive: number; stock: Record<string, number> } // locati
 interface LineResult { sku: string; ok: boolean; receivedBefore?: number; receivedAfter?: number; stock: Array<{ locationName: string; before: number; after: number; ok: boolean }>; error?: string }
 type BinsState = StockBin[] | "loading" | undefined;
 
+interface LandingData {
+  recent: Array<{ poNumber: string; at: string | null; delta: number | null; product: string; vendor: string | null; received: number; ordered: number }>;
+  corrections: Array<{ poNumber: string; sku: string; size: string | null; unreceived: number; at: string; ok: boolean }>;
+  stats: { weekPos: number; weekUnits: number; overCount: number; overUnits: number; fixes30: number; fixUnits30: number; lastFix: { poNumber: string; size: string | null; unreceived: number } | null };
+}
+
 const sizeOf = (name: string) => (name.match(/[-–]\s*([A-Z0-9-]+)$/)?.[1] ?? name.split(/\s+/).pop() ?? "");
 const productOf = (name: string) => name.replace(/\s*[-–]\s*[A-Z0-9-]+$/, "").trim();
 const day = (iso: string | null) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
+function timeAgo(iso: string): string {
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 90) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
 
 export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { shipheroConnected: boolean; initialPo?: string; sizeMap: SizeMap }) {
   // Size comes from the SKU's size code (same map as PO History). ShipHero's
@@ -36,8 +51,22 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
   const [applying, setApplying] = useState(false);
   const [results, setResults] = useState<LineResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [landing, setLanding] = useState<LandingData | null>(null);
   const binsRef = useRef<Record<string, BinsState>>({});
   useEffect(() => { binsRef.current = bins; }, [bins]);
+
+  // Landing feed (recent booked-in + corrections) — decorative, so failures are
+  // silent. Skipped for embeds that deep-link straight to a PO.
+  useEffect(() => {
+    if (initialPo) return;
+    void (async () => {
+      try {
+        const res = await fetch("/api/po/unreceive/landing");
+        const j = await res.json();
+        if (res.ok) setLanding(j);
+      } catch { /* landing is optional */ }
+    })();
+  }, [initialPo]);
 
   // ---- data ----
   // Once a SKU's bins are known, pre-fill Receiving for a line that has a
@@ -207,22 +236,35 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
             </div>
           )}
 
-          {/* ---------- step 1: find ---------- */}
+          {/* ---------- step 1: landing (ink hero + recent activity) ---------- */}
           {!detail && !loadingDetail && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-8 md:p-10">
-              <h2 className="text-xl font-semibold text-slate-900 mb-1">Which PO needs correcting?</h2>
-              <p className="text-sm text-slate-500 mb-6">Enter the PO number. If more than one PO shares it (it happens), you&apos;ll pick the right one next.</p>
-              <form onSubmit={(e) => { e.preventDefault(); search(); }} className="flex items-center gap-3 max-w-lg">
-                <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. PO510"
-                  className="flex-1 text-lg font-mono border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none" />
-                <button disabled={searching || !shipheroConnected || !query.trim()} className="text-sm font-medium bg-indigo-600 text-white rounded-lg px-5 py-3 hover:bg-indigo-700 disabled:opacity-40">
-                  {searching ? "Searching…" : "Find PO"}
-                </button>
-              </form>
+            <>
+              <div className="relative overflow-hidden bg-[#17163a] rounded-2xl p-6 sm:p-7 text-[#eceafd]">
+                <div aria-hidden className="absolute -right-40 -bottom-56 w-[480px] h-[480px] rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, rgba(99,91,255,.5), rgba(99,91,255,0) 62%)" }} />
+                <p className="relative text-[10px] tracking-[0.24em] text-[#8f8ac9] uppercase">PO Un-receive</p>
+                <h2 className="relative text-2xl font-semibold text-white mt-2">Correct a PO&apos;s received counter — and the stock with it.</h2>
+                <p className="relative text-xs text-[#a5a1e0] mt-1.5">Open any purchase order below or by number; nothing is written until you review and apply.</p>
+                <form onSubmit={(e) => { e.preventDefault(); void search(); }} className="relative mt-5 flex max-w-md rounded-[10px] overflow-hidden shadow-lg shadow-indigo-950/40">
+                  <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="PO number…  e.g. PO510"
+                    className="flex-1 bg-white text-slate-900 font-mono text-sm px-4 py-3 outline-none placeholder:text-slate-400" />
+                  <button disabled={searching || !shipheroConnected || !query.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 disabled:opacity-50">
+                    {searching ? "Searching…" : "Open ›"}
+                  </button>
+                </form>
+                <div className="relative flex flex-wrap gap-x-6 gap-y-1.5 mt-6 pt-4 border-t border-[#262450] text-[11.5px] text-[#8f8ac9]">
+                  <span><b className="text-white font-mono tabular-nums">{landing?.stats.weekPos ?? "—"}</b> POs booked in · 7 days</span>
+                  <span><b className="text-white font-mono tabular-nums">{landing ? landing.stats.weekUnits.toLocaleString("en-GB") : "—"}</b> units received</span>
+                  <span><b className="text-white font-mono tabular-nums">{landing?.stats.overCount ?? "—"}</b> over-received · +{landing?.stats.overUnits ?? 0} units</span>
+                  <span><b className="text-white font-mono tabular-nums">{landing?.stats.fixes30 ?? "—"}</b> corrections · 30 days</span>
+                  {landing?.stats.lastFix && (
+                    <span>last fix <b className="text-white font-mono tabular-nums">−{landing.stats.lastFix.unreceived}</b> {landing.stats.lastFix.poNumber}{landing.stats.lastFix.size ? ` ${landing.stats.lastFix.size}` : ""}</span>
+                  )}
+                </div>
+              </div>
 
-              {matches && matches.length === 0 && <p className="mt-6 text-sm text-rose-600">No PO called <b>{query}</b> in ShipHero — check the number.</p>}
+              {matches && matches.length === 0 && <Banner tone="rose">No PO called <b>{query}</b> in ShipHero — check the number.</Banner>}
               {matches && matches.length > 1 && (
-                <div className="mt-8">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">{matches.length} POs called {matches[0].poNumber} — pick the right one</p>
                   <div className="flex flex-col gap-2">
                     {matches.map((m) => (
@@ -237,7 +279,57 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
                   </div>
                 </div>
               )}
-            </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-4 items-start">
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-wider text-slate-400 font-semibold mb-2 ml-0.5">Booked in — most recent first</p>
+                  <div className="flex flex-col gap-2">
+                    {!landing ? (
+                      <p className="text-xs text-slate-400 bg-white border border-slate-200 rounded-xl px-4 py-4">Loading recent receives…</p>
+                    ) : landing.recent.length === 0 ? (
+                      <p className="text-xs text-slate-400 bg-white border border-slate-200 rounded-xl px-4 py-4">Nothing booked in recently — search any PO above.</p>
+                    ) : (
+                      landing.recent.map((r) => (
+                        <button key={r.poNumber} onClick={() => { setQuery(r.poNumber); void search(r.poNumber); }}
+                          className="grid grid-cols-[80px_1fr_auto_auto] gap-3.5 items-center bg-white border border-slate-200 hover:border-indigo-400 rounded-xl px-4 py-3 text-left transition-colors">
+                          <span className="font-mono text-[12.5px] font-bold text-slate-900">{r.poNumber}
+                            <span className="block font-sans font-normal text-[10px] text-slate-400">{r.at ? timeAgo(r.at) : "recently"}</span>
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-xs text-slate-600 truncate">{r.product || "—"}{r.vendor ? <span className="text-slate-400"> · {r.vendor}</span> : null}</span>
+                            <span className="block h-1 w-full max-w-[300px] bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                              <span className={`block h-full rounded-full ${r.received > r.ordered ? "bg-rose-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, r.ordered ? Math.round((r.received / r.ordered) * 100) : 0)}%` }} />
+                            </span>
+                          </span>
+                          <span className="font-mono text-xs text-slate-600 tabular-nums whitespace-nowrap text-right">{r.received} / {r.ordered}
+                            {r.delta ? <span className="block text-[10px] text-emerald-600">+{r.delta} booked in</span> : null}
+                          </span>
+                          {r.received > r.ordered
+                            ? <span className="text-[9.5px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">+{r.received - r.ordered}</span>
+                            : <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">✓</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <p className="px-4 py-2.5 text-[10.5px] uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-200 bg-slate-50/60">Recent corrections — by this app</p>
+                  {!landing || landing.corrections.length === 0 ? (
+                    <p className="px-4 py-4 text-xs text-slate-400">No corrections made through the app yet.</p>
+                  ) : (
+                    landing.corrections.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-4 py-2 border-b border-slate-50 last:border-0 text-xs text-slate-600">
+                        <span className="font-mono font-semibold text-slate-800">{c.poNumber}</span>
+                        <span>{c.size ?? c.sku}</span>
+                        <span className={`font-mono font-bold ${c.ok ? "text-rose-600" : "text-slate-300 line-through"}`}>−{c.unreceived}</span>
+                        {!c.ok && <span className="text-[10px] text-slate-400">failed</span>}
+                        <span className="ml-auto text-[10px] text-slate-400 whitespace-nowrap">{timeAgo(c.at)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
           )}
           {loadingDetail && <div className="bg-white border border-slate-200 rounded-2xl p-8 text-sm text-slate-400">Loading PO lines…</div>}
 
@@ -270,7 +362,7 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
                       <th className="text-right font-medium px-3 py-2.5">Received</th>
                       <th className="text-right font-medium px-3 py-2.5">Over</th>
                       <th className="text-right font-medium px-3 py-2.5 w-44">Take off received</th>
-                      <th className="text-left font-medium px-5 py-2.5">Stock out of</th>
+                      <th className="text-left font-medium px-5 py-2.5 w-80">Stock out of</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -299,27 +391,28 @@ export function PoUnreceive({ shipheroConnected, initialPo = "", sizeMap }: { sh
                             </div>
                             {over > 0 && !on && <button onClick={() => setUnreceive(l, over)} className="block ml-auto mt-1 text-[11px] text-indigo-600 hover:underline">fix the +{over}</button>}
                           </td>
-                          <td className="px-5 py-3">
-                            {on ? (
-                              b === "loading" || b === undefined ? <span className="text-xs text-slate-400">Finding stock…</span> :
-                              b.length === 0 ? <span className="text-xs text-amber-600">No stock in any bin — counter only</span> : (
-                                <div className="flex flex-col gap-1.5">
-                                  {!b.some((x) => x.locationName === "Receiving") && <span className="text-[11px] text-amber-600">Nothing in Receiving for this size — pick the bin the extra unit is actually in, or leave stock at 0 (counter only).</span>}
-                                  {b.map((bin) => (
-                                    <label key={bin.locationId} className="flex items-center gap-2 text-xs">
-                                      <input type="number" min={0} max={bin.qty} value={r?.stock[bin.locationId] || ""} placeholder="0" onChange={(e) => setStock(l, bin, Number(e.target.value))}
-                                        className="w-16 h-7 text-center border border-slate-200 rounded-md tabular-nums" />
-                                      <span className={`${bin.locationName === "Receiving" ? "font-semibold text-slate-800" : "text-slate-700"}`}>{bin.locationName}</span>
-                                      <span className="text-slate-400">has {bin.qty}</span>
-                                    </label>
-                                  ))}
-                                  <span className={`text-[11px] ${chosen === r!.unreceive ? "text-emerald-600" : chosen === 0 ? "text-amber-600" : "text-rose-600"}`}>
-                                    {chosen === r!.unreceive ? `✓ ${chosen} out of stock` : chosen === 0 ? "counter only — no stock removed" : `${chosen} chosen vs ${r!.unreceive} off received`}
-                                  </span>
-                                </div>
-                              )
+                          {/* Fixed structure: bins render the same stacked layout whether or
+                              not a quantity is set, so typing a qty never reflows the table. */}
+                          <td className="px-5 py-3 w-80">
+                            {b === "loading" || b === undefined ? (
+                              <span className={`text-xs block min-h-[28px] ${on ? "text-slate-400" : "text-slate-300"}`}>{on ? "Finding stock…" : ""}</span>
+                            ) : b.length === 0 ? (
+                              <span className={`text-xs block min-h-[28px] ${on ? "text-amber-600" : "text-slate-300"}`}>No stock in any bin{on ? " — counter only" : ""}</span>
                             ) : (
-                              <span className="text-xs text-slate-300">{Array.isArray(b) ? (b.map((x) => `${x.locationName} ${x.qty}`).join(" · ") || "no stock") : ""}</span>
+                              <div className={`flex flex-col gap-1.5 ${on ? "" : "opacity-55"}`}>
+                                {on && !b.some((x) => x.locationName === "Receiving") && <span className="text-[11px] text-amber-600">Nothing in Receiving for this size — pick the bin the extra unit is actually in, or leave stock at 0 (counter only).</span>}
+                                {b.map((bin) => (
+                                  <label key={bin.locationId} className="flex items-center gap-2 text-xs">
+                                    <input type="number" min={0} max={bin.qty} value={r?.stock[bin.locationId] || ""} placeholder="0" onChange={(e) => setStock(l, bin, Number(e.target.value))}
+                                      className="w-16 h-7 text-center border border-slate-200 rounded-md tabular-nums bg-white" />
+                                    <span className={`${bin.locationName === "Receiving" ? "font-semibold text-slate-800" : "text-slate-700"}`}>{bin.locationName}</span>
+                                    <span className="text-slate-400">has {bin.qty}</span>
+                                  </label>
+                                ))}
+                                <span className={`text-[11px] min-h-[16px] ${!on ? "text-transparent" : chosen === r!.unreceive ? "text-emerald-600" : chosen === 0 ? "text-amber-600" : "text-rose-600"}`}>
+                                  {!on ? "·" : chosen === r!.unreceive ? `✓ ${chosen} out of stock` : chosen === 0 ? "counter only — no stock removed" : `${chosen} chosen vs ${r!.unreceive} off received`}
+                                </span>
+                              </div>
                             )}
                           </td>
                         </tr>

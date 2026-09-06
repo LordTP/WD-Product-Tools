@@ -25,6 +25,7 @@ import {
   type PoLineDetail,
 } from "@/lib/shiphero/po-pull";
 import { getSizeMap } from "@/lib/size-codes";
+import { recordReceiveEvents, type ReceiveEvent } from "@/lib/receive-events";
 
 const now = () => new Date().toISOString();
 const parse = <T>(s: string | null, fallback: T): T => {
@@ -48,6 +49,14 @@ async function getLastSyncedAt(): Promise<string | null> {
  *   (`updated_from`) — tiny and cheap regardless of total PO count.
  * - Full (opts.full, or empty cache): backfill everything from `sinceISO`.
  */
+function sumLinesReceived(linesJson: string | null): number {
+  try {
+    return (JSON.parse(linesJson ?? "[]") as Array<{ quantityReceived?: number }>).reduce((a, l) => a + (l.quantityReceived ?? 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function syncPoCache(
   sinceISO: string,
   opts: { full?: boolean } = {},
@@ -64,8 +73,19 @@ export async function syncPoCache(
     sizeMap,
   );
   const syncedAt = now();
+  // "Units arrived" detection: compare each incoming PO's received total with
+  // what the cache held before this sync — increases feed the Un-receive
+  // landing's booked-in feed (receive-events.ts).
+  const prevRows = await db.select({ poNumber: shipheroPoCache.poNumber, lines: shipheroPoCache.lines }).from(shipheroPoCache);
+  const prevReceived = new Map(prevRows.map((r) => [r.poNumber, sumLinesReceived(r.lines)]));
+  const arrivals: ReceiveEvent[] = [];
   for (const p of pos) {
     if (!p.poNumber) continue;
+    const totalReceived = p.lines.reduce((a, l) => a + l.quantityReceived, 0);
+    const before = prevReceived.get(p.poNumber);
+    if (before !== undefined && totalReceived > before) {
+      arrivals.push({ poNumber: p.poNumber, at: syncedAt, delta: totalReceived - before, total: totalReceived });
+    }
     const row = {
       poNumber: p.poNumber,
       legacyId: p.legacyId,
@@ -84,6 +104,7 @@ export async function syncPoCache(
       .values(row)
       .onConflictDoUpdate({ target: shipheroPoCache.poNumber, set: row });
   }
+  await recordReceiveEvents(arrivals).catch(() => undefined);
   // Persist the run time so "synced Xh ago" reflects the last sync even when an
   // incremental pull changed no rows (otherwise it'd look like Sync did nothing).
   await setLastSyncRun(syncedAt);
