@@ -76,7 +76,7 @@ export async function applyBookIn(draft: PoDraftDto, bin: string): Promise<BookI
   if (!draft.shipheroId) throw new Error("This PO hasn't been pushed to ShipHero yet.");
   const warehouseId = await getWarehouseId();
   const locationId = await resolveRetBinId(bin);
-  const reason = `Booked in from ${draft.poNumber} - Product App`;
+  const reason = `Booked in from ${draft.poNumber}`;
 
   // Book in what ShipHero holds RIGHT NOW — never the local draft.
   const live = await poDetail(draft.shipheroId);
