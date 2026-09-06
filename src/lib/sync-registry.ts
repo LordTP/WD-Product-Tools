@@ -19,9 +19,10 @@ import { syncBinsCache } from "@/lib/bins-cache";
 import { syncVendorsFromShiphero } from "@/lib/shiphero/vendor-sync";
 import { refreshCycleCounts } from "@/lib/cycle-counts-log";
 import { generateDay } from "@/lib/warehouse-cache";
+import { syncInventoryLocations } from "@/lib/inventory-cache";
 import { todayUkYmd } from "@/lib/uk-time";
 
-export type SyncKey = "po" | "ops" | "returns" | "barcodes" | "bins" | "vendors" | "cycleCounts" | "warehouseToday";
+export type SyncKey = "po" | "ops" | "returns" | "barcodes" | "bins" | "vendors" | "cycleCounts" | "warehouseToday" | "inventoryLocations";
 
 interface JobDef {
   label: string;
@@ -40,6 +41,7 @@ export const JOBS: Record<SyncKey, JobDef> = {
   vendors: { label: "Vendors", heavy: false, run: () => syncVendorsFromShiphero() },
   cycleCounts: { label: "Cycle counts", heavy: false, run: () => refreshCycleCounts() },
   warehouseToday: { label: "Warehouse day (today)", heavy: true, run: () => generateDay(todayUkYmd()) },
+  inventoryLocations: { label: "Inventory locations", heavy: true, run: () => syncInventoryLocations() },
 };
 
 export interface JobStamp { at: string; ok: boolean; ms: number; error?: string }

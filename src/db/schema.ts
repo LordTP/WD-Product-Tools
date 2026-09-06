@@ -236,6 +236,21 @@ export const poUnreceiveLog = sqliteTable("po_unreceive_log", {
   createdAt: text("created_at").notNull(),
 });
 
+// Whole-warehouse inventory by location (Apps → Inventory + the scan resolver).
+// One row per SKU+bin currently holding stock, fully replaced on each sync from
+// a ShipHero inventory snapshot. Per-SKU totals live in app_state
+// ("inventory_totals") since they aren't per-bin facts.
+export const inventoryLocationsCache = sqliteTable("inventory_locations_cache", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sku: text("sku").notNull(),
+  bin: text("bin").notNull(),
+  qty: integer("qty").notNull().default(0),
+  sellable: integer("sellable", { mode: "boolean" }).notNull().default(true),
+  syncedAt: text("synced_at"),
+});
+
+export type InventoryLocationRow = typeof inventoryLocationsCache.$inferSelect;
+
 // Per-PO ShipHero history (rebuilt from inventory_changes), cached 15 min.
 export const poHistoryCache = sqliteTable("po_history_cache", {
   poId: text("po_id").primaryKey(),

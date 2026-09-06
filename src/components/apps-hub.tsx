@@ -6,6 +6,7 @@
 // Spec: Product/WAREHOUSE_FEATURES_MIGRATION_SPEC.md
 
 import { useCallback, useEffect, useState } from "react";
+import { InventoryExplorer } from "./inventory-explorer";
 
 type AppKey = "scan" | "inventory" | "po-scanner";
 
@@ -34,7 +35,7 @@ const APPS: AppCard[] = [
     name: "Inventory",
     desc: "Every SKU with every bin holding it — totals, per-bin quantities, search by product, location or barcode.",
     meta: "Whole-warehouse explorer",
-    ready: false,
+    ready: true,
     icon: InventoryIcon,
     tint: "bg-emerald-50 text-emerald-600",
   },
@@ -169,15 +170,19 @@ function AppFrame({ appKey, onBack }: { appKey: AppKey; onBack: () => void }) {
         <h1 className="text-[15px] font-semibold text-slate-900">{appName(appKey)}</h1>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
-          <span className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${card.tint}`}>
-            <Icon className="w-7 h-7" />
-          </span>
-          <p className="text-[15px] font-semibold text-slate-900 mt-4">{card.name} is being built</p>
-          <p className="text-[13px] text-slate-500 mt-1.5 leading-snug">{card.desc}</p>
+      {appKey === "inventory" ? (
+        <InventoryExplorer />
+      ) : (
+        <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
+          <div className="text-center max-w-sm">
+            <span className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center ${card.tint}`}>
+              <Icon className="w-7 h-7" />
+            </span>
+            <p className="text-[15px] font-semibold text-slate-900 mt-4">{card.name} is being built</p>
+            <p className="text-[13px] text-slate-500 mt-1.5 leading-snug">{card.desc}</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

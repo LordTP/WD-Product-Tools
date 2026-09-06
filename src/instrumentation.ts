@@ -43,6 +43,9 @@ export async function register() {
   schedule("ops", 20 * 60_000, { initialDelayMs: 150_000 });
   // Heavier / slower-moving.
   schedule("warehouseToday", 2 * 60 * 60_000, { fromHour: 7, toHour: 19, initialDelayMs: 5 * 60_000 });
+  // Inventory locations: one snapshot job per run — cheap on credits but heavy
+  // on wall-clock (generate → poll → download), so working hours only.
+  schedule("inventoryLocations", 2 * 60 * 60_000, { fromHour: 7, toHour: 19, initialDelayMs: 7 * 60_000 });
   schedule("barcodes", 6 * 60 * 60_000, { initialDelayMs: 8 * 60_000 });
   schedule("cycleCounts", 6 * 60 * 60_000, { initialDelayMs: 10 * 60_000 });
   schedule("bins", 12 * 60 * 60_000, { initialDelayMs: 12 * 60_000 });

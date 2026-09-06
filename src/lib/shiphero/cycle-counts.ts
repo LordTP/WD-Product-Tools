@@ -9,33 +9,12 @@
 
 import { shipheroGraphql } from "./client";
 import { getWarehouseId } from "./warehouse";
+import { fetchInventorySnapshot } from "./inventory-snapshot";
 import { compareLocation, sortByLocation, type LowStockItem } from "@/lib/cycle-counts-derive";
 
 const q1 = (s: string) => String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 // ---------- 1. low-stock report (live snapshot) ----------
-
-interface SnapshotBin {
-  location_name?: string;
-  quantity?: number;
-  sellable?: boolean;
-}
-interface SnapshotWarehouseProduct {
-  on_hand?: number;
-  available?: number;
-  non_sellable?: number;
-  item_bins?: Record<string, SnapshotBin>;
-}
-interface SnapshotProduct {
-  sku?: string;
-  warehouse_products?: Record<string, SnapshotWarehouseProduct>;
-}
-interface SnapshotFile {
-  products?: Record<string, SnapshotProduct>;
-}
-
-const SNAPSHOT_POLL_TRIES = 45;
-const SNAPSHOT_POLL_MS = 2000;
 
 /**
  * Every SKU whose total on_hand is between minQty and maxQty (default 1–10),
@@ -47,56 +26,25 @@ export async function fetchLowStockItems(
 ): Promise<{ items: LowStockItem[]; snapshotAt: string }> {
   const maxQty = Number.isFinite(opts.maxQty) ? Number(opts.maxQty) : 10;
   const minQty = Number.isFinite(opts.minQty) ? Number(opts.minQty) : 1;
-  const warehouseId = await getWarehouseId();
-
-  // 1) kick off the snapshot job
-  const gen = await shipheroGraphql<{
-    inventory_generate_snapshot?: { snapshot?: { snapshot_id?: string } };
-  }>(
-    `mutation { inventory_generate_snapshot(data: { warehouse_id: "${q1(warehouseId)}", has_inventory: true, new_format: true }) { snapshot { snapshot_id status } } }`,
-  );
-  const snapshotId = gen.data.inventory_generate_snapshot?.snapshot?.snapshot_id;
-  if (!snapshotId) throw new Error("ShipHero didn't return an inventory snapshot id.");
-
-  // 2) poll until it produces a download url
-  let url: string | null = null;
-  for (let i = 0; i < SNAPSHOT_POLL_TRIES && !url; i++) {
-    await new Promise((r) => setTimeout(r, i === 0 ? 1200 : SNAPSHOT_POLL_MS));
-    const poll = await shipheroGraphql<{
-      inventory_snapshot?: { snapshot?: { status?: string; snapshot_url?: string; error?: string } };
-    }>(`query { inventory_snapshot(snapshot_id: "${q1(snapshotId)}") { snapshot { status snapshot_url error } } }`);
-    const snap = poll.data.inventory_snapshot?.snapshot;
-    if (snap?.error) throw new Error(`ShipHero snapshot failed: ${snap.error}`);
-    if (snap?.snapshot_url) url = snap.snapshot_url;
-  }
-  if (!url) throw new Error("The inventory snapshot didn't finish in time — try again.");
-
-  // 3) download + filter (the file is a plain JSON export)
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Couldn't download the inventory snapshot (${res.status}).`);
-  const file = (await res.json()) as SnapshotFile;
+  const { entries, snapshotAt } = await fetchInventorySnapshot();
 
   const items: LowStockItem[] = [];
-  for (const [key, product] of Object.entries(file.products ?? {})) {
-    const wp =
-      product.warehouse_products?.[warehouseId] ?? Object.values(product.warehouse_products ?? {})[0];
-    if (!wp) continue;
-    const onHand = Number(wp.on_hand ?? 0);
-    if (onHand < minQty || onHand > maxQty) continue;
-    const locations = Object.values(wp.item_bins ?? {})
-      .map((b) => ({ name: b.location_name ?? "", qty: Number(b.quantity ?? 0) }))
-      .filter((l) => l.name && l.qty > 0)
+  for (const e of entries) {
+    if (e.onHand < minQty || e.onHand > maxQty) continue;
+    const locations = e.bins
+      .map((b) => ({ name: b.name, qty: b.qty }))
+      .filter((l) => l.qty > 0)
       .sort((a, b) => compareLocation(a.name, b.name));
     items.push({
-      sku: product.sku ?? key,
-      onHand,
-      available: Number(wp.available ?? 0),
-      nonSellable: Number(wp.non_sellable ?? 0),
+      sku: e.sku,
+      onHand: e.onHand,
+      available: e.available,
+      nonSellable: e.nonSellable,
       locations,
       primaryLocation: locations[0]?.name ?? null,
     });
   }
-  return { items: sortByLocation(items), snapshotAt: new Date().toISOString() };
+  return { items: sortByLocation(items), snapshotAt };
 }
 
 // ---------- 2. create + status ----------

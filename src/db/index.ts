@@ -106,6 +106,23 @@ export function initDb() {
   } catch (err) {
     console.error("[db] warehouse_day_cache init failed:", err);
   }
+  // Whole-warehouse inventory-by-location cache (idempotent; not in a migration).
+  try {
+    sqlite.exec(
+      `CREATE TABLE IF NOT EXISTS inventory_locations_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT NOT NULL,
+        bin TEXT NOT NULL,
+        qty INTEGER NOT NULL DEFAULT 0,
+        sellable INTEGER NOT NULL DEFAULT 1,
+        synced_at TEXT
+      )`,
+    );
+    sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_loc_sku_bin ON inventory_locations_cache (sku, bin)");
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_inv_loc_bin ON inventory_locations_cache (bin)");
+  } catch (err) {
+    console.error("[db] inventory_locations_cache init failed:", err);
+  }
   // Per-PO sheet dates ShipHero can't hold (idempotent; not in a migration).
   try {
     sqlite.exec(
