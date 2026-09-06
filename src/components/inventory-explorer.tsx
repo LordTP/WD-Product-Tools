@@ -5,12 +5,7 @@
 // through the shared queue. Renders inside the Apps hub frame.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  matchesQuery,
-  type InventoryItem,
-  type InventoryPayload,
-  type SearchScope,
-} from "@/lib/inventory-types";
+import { matchesQuery, type InventoryItem, type InventoryPayload } from "@/lib/inventory-types";
 
 const RENDER_CAP = 300;
 
@@ -24,14 +19,6 @@ function timeAgo(iso: string | null): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-const SCOPES: Array<{ key: SearchScope; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "sku", label: "SKU" },
-  { key: "product", label: "Product" },
-  { key: "location", label: "Location" },
-  { key: "barcode", label: "Barcode" },
-];
-
 type ModalView = { kind: "sku"; sku: string } | { kind: "bin"; bin: string };
 
 export function InventoryExplorer() {
@@ -40,7 +27,6 @@ export function InventoryExplorer() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<SearchScope>("all");
   // Modal navigation is a stack so bin ⇄ SKU pivots can go back.
   const [stack, setStack] = useState<ModalView[]>([]);
 
@@ -79,8 +65,8 @@ export function InventoryExplorer() {
   const items = useMemo(() => data?.items ?? [], [data]);
   const bySku = useMemo(() => new Map(items.map((i) => [i.sku, i])), [items]);
   const filtered = useMemo(
-    () => items.filter((i) => matchesQuery(i, query, scope)),
-    [items, query, scope],
+    () => items.filter((i) => matchesQuery(i, query)),
+    [items, query],
   );
   const shown = filtered.slice(0, RENDER_CAP);
   const totalUnits = useMemo(() => filtered.reduce((a, i) => a + i.onHand, 0), [filtered]);
@@ -98,19 +84,6 @@ export function InventoryExplorer() {
           className="flex-1 min-w-[200px] max-w-md bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           autoFocus
         />
-        <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-          {SCOPES.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => setScope(s.key)}
-              className={`px-2.5 py-2 text-xs font-medium transition-colors ${
-                scope === s.key ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs text-slate-400 whitespace-nowrap">
             {data?.syncedAt ? `synced ${timeAgo(data.syncedAt)}` : loading ? "" : "not synced yet"}

@@ -24,8 +24,6 @@ export interface InventoryPayload {
   syncedAt: string | null;
 }
 
-export type SearchScope = "all" | "sku" | "product" | "location" | "barcode";
-
 // Zone ranking mirrors Will's app: BULK shelves first, then STORE, then the
 // pick floor / everything else — each zone numeric-aware A→Z.
 const zoneRank = (bin: string): number => {
@@ -41,19 +39,12 @@ export function sortBins(bins: InventoryBin[]): InventoryBin[] {
     .sort((a, b) => zoneRank(a.name) - zoneRank(b.name) || a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
-/** Does this item match the query under the chosen scope? Tokenised like the
- *  Label Press search: every word must appear somewhere in the scoped text, so
- *  "blythe navy" finds "BLYTHE WIDE LEG TROUSER | NAVY". */
-export function matchesQuery(item: InventoryItem, query: string, scope: SearchScope): boolean {
+/** Tokenised like the Label Press search: every word must appear somewhere in
+ *  the item's text (sku, title, size, barcode, bins), so "blythe navy" finds
+ *  "BLYTHE WIDE LEG TROUSER | NAVY". */
+export function matchesQuery(item: InventoryItem, query: string): boolean {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!tokens.length) return true;
-  const bins = item.bins.map((b) => b.name).join(" ");
-  const hay = (
-    scope === "sku" ? item.sku
-    : scope === "product" ? `${item.title} ${item.size}`
-    : scope === "location" ? bins
-    : scope === "barcode" ? item.barcode
-    : `${item.sku} ${item.title} ${item.size} ${item.barcode} ${bins}`
-  ).toLowerCase();
+  const hay = `${item.sku} ${item.title} ${item.size} ${item.barcode} ${item.bins.map((b) => b.name).join(" ")}`.toLowerCase();
   return tokens.every((t) => hay.includes(t));
 }
