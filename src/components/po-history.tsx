@@ -1112,7 +1112,7 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
         onClick={onClose}
       />
       <aside
-        className={`fixed top-0 right-0 bottom-0 w-full max-w-[580px] bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${shown ? "translate-x-0" : "translate-x-full"}`}
+        className={`fixed top-0 right-0 bottom-0 w-full max-w-[740px] bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${shown ? "translate-x-0" : "translate-x-full"}`}
       >
         {/* ink header */}
         <div className="px-5 py-4 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-white">
@@ -1122,6 +1122,15 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
               <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />{po.status || "—"}
             </span>
             <div className="ml-auto flex gap-1.5 shrink-0">
+              <button onClick={onRefresh} title="Re-pull this PO from ShipHero" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white transition-colors grid place-items-center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" /></svg>
+              </button>
+              {po.legacyId && (
+                <a href={`https://app.shiphero.com/dashboard/purchase-orders/details/${po.legacyId}`} target="_blank" rel="noreferrer" title="Open in ShipHero" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white transition-colors grid place-items-center">
+                  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" /></svg>
+                </a>
+              )}
+              <span className="w-px h-8 bg-slate-500/30 mx-0.5" />
               <button onClick={onPrev} disabled={!onPrev} title="Previous PO (←)" className="w-8 h-8 rounded-lg border border-slate-500/30 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-30 transition-colors grid place-items-center">
                 <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg>
               </button>
@@ -1302,14 +1311,9 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
               <span className="text-[10.5px] text-slate-400">{dirty ? "unsaved changes" : "change a qty, price or the status"}</span>
             </>)
           ) : (<>
-            <button onClick={() => setEditMode(true)} disabled={!shipheroConnected || !loaded} className="text-xs px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-500 disabled:opacity-40">Edit qty / price / status</button>
-            <button onClick={() => setUnreceiveOpen(true)} disabled={!shipheroConnected} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40 disabled:opacity-40" title="Take units off this PO's received counters (and out of stock)">Un-receive…</button>
-            {po.legacyId && <a href={`https://app.shiphero.com/dashboard/purchase-orders/details/${po.legacyId}`} target="_blank" rel="noreferrer" className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40">ShipHero ↗</a>}
-            <button onClick={onRefresh} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="Re-pull this PO from ShipHero">Refresh</button>
+            <button onClick={() => setEditMode(true)} disabled={!shipheroConnected || !loaded} className="text-[13px] px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-500 disabled:opacity-40 transition-colors">Edit qty / price / status</button>
+            <button onClick={() => setUnreceiveOpen(true)} disabled={!shipheroConnected} className="text-[13px] px-4 py-2 rounded-lg border border-slate-200 text-slate-700 font-medium hover:border-indigo-200 hover:bg-indigo-50/40 disabled:opacity-40 transition-colors" title="Take units off this PO's received counters (and out of stock)">Un-receive…</button>
             <div className="flex-1" />
-            <span className="text-[10.5px] text-slate-300 whitespace-nowrap">
-              <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">←</kbd> <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">→</kbd> switch · <kbd className="font-mono bg-slate-100 text-slate-400 rounded px-1.5 py-0.5">esc</kbd> close
-            </span>
           </>)}
         </div>
       </aside>
