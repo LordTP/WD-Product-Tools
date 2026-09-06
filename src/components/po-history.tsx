@@ -345,10 +345,24 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
     }
   }, []);
 
+  // Drawer enter/exit: slide only when opening from closed (arrowing between
+  // POs remounts the drawer but must not replay the animation), and keep it
+  // mounted for the exit slide before unmounting.
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const [drawerFresh, setDrawerFresh] = useState(true);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function openDetail(po: PoSummary) {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    setDrawerFresh(openPo === null || drawerClosing);
+    setDrawerClosing(false);
     setOpenPo(po);
     const cur = details[po.poNumber];
     if (!cur || (typeof cur === "object" && "error" in cur)) loadDetail(po.poNumber);
+  }
+  function closeDrawer() {
+    if (drawerClosing) return;
+    setDrawerClosing(true);
+    closeTimer.current = setTimeout(() => { setOpenPo(null); setDrawerClosing(false); closeTimer.current = null; }, 300);
   }
 
   const applyDetail = useCallback((detail: PoDetail) => {
@@ -867,7 +881,9 @@ export function PoHistory({ shipheroConnected, statuses, sizeMap, initialFilters
           statuses={statuses}
           sizeMap={sizeMap}
           shipheroConnected={shipheroConnected}
-          onClose={() => setOpenPo(null)}
+          onClose={closeDrawer}
+          closing={drawerClosing}
+          slideIn={drawerFresh}
           onRefresh={() => loadDetail(openPo.poNumber, true)}
           onSaved={applyDetail}
           onSaveDates={(change, old) => {
@@ -977,7 +993,7 @@ function PoRow({ po, dates, expected, checked, open, onOpen, onToggle }: {
 }
 
 // ---------- drawer ----------
-function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onClose, onRefresh, onSaved, onSaveDates, onPrev, onNext }: {
+function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onClose, closing, slideIn, onRefresh, onSaved, onSaveDates, onPrev, onNext }: {
   po: PoSummary;
   detail: PoDetail | "loading" | { error: string } | undefined;
   dates: PoDatesRow | undefined;
@@ -985,12 +1001,24 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
   sizeMap: SizeMap;
   shipheroConnected: boolean;
   onClose: () => void;
+  /** Parent is animating the drawer out (it stays mounted for the slide). */
+  closing: boolean;
+  /** Opened from closed → slide in; prev/next remounts skip the animation. */
+  slideIn: boolean;
   onRefresh: () => void;
   onSaved: (detail: PoDetail) => void;
   onSaveDates: (change: DateChange, oldExpected: string | null) => void;
   onPrev?: () => void;
   onNext?: () => void;
 }) {
+  const [entered, setEntered] = useState(!slideIn);
+  useEffect(() => {
+    if (!entered) {
+      const id = requestAnimationFrame(() => setEntered(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [entered]);
+  const shown = entered && !closing;
   const loaded = detail && detail !== "loading" && !("error" in detail) ? (detail as PoDetail) : null;
   const closed = isDoneStatus(po.status);
   const expected = dates?.delivery ?? po.poDate?.slice(0, 10) ?? "";
@@ -1079,8 +1107,13 @@ function PoDrawer({ po, detail, dates, statuses, sizeMap, shipheroConnected, onC
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose} />
-      <aside className="fixed top-0 right-0 bottom-0 w-full max-w-[580px] bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col">
+      <div
+        className={`fixed inset-0 z-40 bg-slate-900/20 transition-opacity duration-300 ${shown ? "opacity-100" : "opacity-0"}`}
+        onClick={onClose}
+      />
+      <aside
+        className={`fixed top-0 right-0 bottom-0 w-full max-w-[580px] bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${shown ? "translate-x-0" : "translate-x-full"}`}
+      >
         <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
